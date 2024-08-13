@@ -12,7 +12,8 @@ end box
 
 box "Server"
    participant "avahi-backup.backup" as backup
-   participant "Backup-Target" as backup.storage 
+   participant "Backup-Target" as backup.storage
+   participant "Restore-Rsync-Server" as backup.restore
 end box
 
 == Setup ==
@@ -54,8 +55,21 @@ client -> avahi.announcement: Default register /etc /root + found ones
 == Backup Cycle ==
 
 backup -> avahi.announcement: reads service announcements from network
+backup -[#Grey]-> client: WIP: updates .backup with credentials for the restore-rsync share
 backup -> client: rsyncs or zfs send announced sources to server
-client -> backup.storage: copy backup (full or incremental)
+local.storage -> backup.storage: copy backup (full or incremental)
+
+
+== Work-in-Progress: Restore ==
+
+client -> client: calls .backup for restore info
+backup -[#Grey]-> client: WIP: restoring 
+
+note left of backup
+
+Work-in-Progress
+
+end note
 
 @enduml
 
