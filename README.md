@@ -12,12 +12,12 @@ Clients tell what they would like to have backup-ed and the server takes care ab
   * [X] document global concept
 * [ ] PoC
   * [X] support of rsync backup method
-  * [X] support of zfs send backup method (full+incremental+resume-token, plain)
+  * [X] support of zfs send backup method
       * [X] Full/Incremental
       * [X] plain/encrypted
       * [X] Support for resume-token (resume transfer)
   * [X] support for proxmox targets
-      * [ ] Targets types
+      * [ ] Targets
         * [ ] lxc containers
         * [ ] vms
       * [ ] Storage types
