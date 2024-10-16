@@ -40,7 +40,7 @@ function type.zfs.logfile.postfix() {
 
 function type.zfs.subvol.name() {
    local tmpstr=""
-   tmpstr="${RUNTIME_ITEM["zfs"]#*/}"
+   tmpstr="${RUNTIME_ITEM["zfs"]}"
    tmpstr="${tmpstr//\//_}"
    echo "zfs.${tmpstr}"
 }
@@ -89,21 +89,27 @@ function type.zfs.check.preflight() {
       fi
       # check if resume-token is available
       local tmpstr=""
-      tmpstr="${RUNTIME_ITEM["zfs"]#*/}"
+      tmpstr="${RUNTIME_ITEM["zfs"]##*/}"
       tmpstr="${tmpstr//\//_}"
       local token="-"
       RUNTIME_ITEM["zfs.resume"]=0
       RUNTIME_ITEM["zfs.target.path"]="${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${tmpstr}"
       RUNTIME_ITEM["zfs.target.path.subvol"]="${RUNTIME_ITEM["zfs.subvol"]}/${tmpstr}"
-      if zfs.exists "${RUNTIME_ITEM["zfs.target.path"]}"
+      if zfs.exists "${RUNTIME_ITEM["zfs.target.path.subvol"]}"
       then
-         token="$(zfs get -H -o value receive_resume_token "${RUNTIME_ITEM["zfs.target.path"]}")"
+         token="$(zfs get -H -o value receive_resume_token "${RUNTIME_ITEM["zfs.target.path.subvol"]}")"
          if [ "${token}" != "-" ]
          then
             RUNTIME_ITEM["zfs.resume"]=1
+            RUNTIME_ITEM["zfs.resume.token"]="${token}"
             output "- resume token found."
             SUMMARY[${#SUMMARY[@]}]="I.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} used resume token."
+         else
+            output "- no resume token."
          fi
+      else
+         output "- no resume token, as the subvol does not exist."
+         output "${RUNTIME_ITEM["zfs.target.path"]}"
       fi
       # check last snapshot if not resume
       if [ ${RUNTIME_ITEM["zfs.resume"]} -eq 0 ]
@@ -249,3 +255,115 @@ function type.zfs_unenc_inc.perform.backup() {
    return ${stat}
 
 }
+
+function type.zfs_unenc_full.perform.backup() {
+
+   local -i stat=0
+
+   # concept
+   # src has no old snapshot -> full / first sync
+   # if yes create a new snapshot at the source and inc to local storage
+   # if no  panic.
+
+   RUNTIME_ITEM["zfs.newsnapshot.name"]="zfsbackup-full"
+
+   output "- full sync of ${RUNTIME_ITEM["zfs.newsnapshot.name"]}"
+
+   if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs snapshot "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}"
+   then
+      output "- start full send-receive..."
+      local -i z_stat=0
+      # unencryption
+      ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs send "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}" \
+      | timeout --foreground 1m zfs receive -s -x encryption -x keyformat -v -eF "${RUNTIME_ITEM["zfs.subvol"]}" | tee "${RUNTIME_ITEM["logfile"]}"
+      z_stat=${PIPESTATUS[1]}
+      # status of the receive side
+      if [ ${z_stat} -eq 0 ]
+      then
+         # ok or timeout
+         output "- full sync completed..."
+      elif [ ${z_stat} -eq 124 ]
+      then
+         output "- full sync hit timeout... resume next time..."
+         SUMMARY[${#SUMMARY[@]}]="W.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} hit time out continue next time."
+         stat=1
+      else
+         output "- something went wrong...removing remote snapshot..."
+         ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs destroy -v "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}" \
+         | tee "${RUNTIME_ITEM["logfile"]}"
+         stat=1
+         SUMMARY[${#SUMMARY[@]}]="E.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} something went wrong with full send."
+      fi
+   else
+      output "! ERROR: can not create remote new snapshot."
+      SUMMARY[${#SUMMARY[@]}]="E.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} can not create new remote snapshot. Broken."
+      stat=1
+   fi
+
+   # stat=1
+   return ${stat}
+
+                     output "- no last backup snapshot -> full"
+                     # mark it with a snapshot for next increament update
+                     output "- create remote snapshot @zfsbackup-full..."
+                     if [ -z "${last_snap}" ]
+                     then
+                        if ssh.cmd "${b_host}" zfs snapshot "${value}@zfsbackup-full"
+                        then
+                           output "- start send-receive..."
+                           if [ ${encryption} -eq 1 ]
+                           then
+                              # encrypted
+                              ssh.cmd "${b_host}" zfs send -w "${value}@zfsbackup-full" \
+                              | zfs receive -s -v -eF "${BROOT_TARGET}"
+                           else
+                              # not encrypted
+                              ssh.cmd "${b_host}" zfs send "${value}@zfsbackup-full" \
+                              | zfs receive -s -x encryption -x keyformat -v -eF "${BROOT_TARGET}"
+                           fi
+                           if [ $? -eq 0 ]
+                           then
+                              continue
+                           else
+                              output "! failed cleanup just created snapshot"
+                              ssh.cmd "${b_host}" zfs destroy -v "${value}@zfsbackup-full"
+                              continue
+                           fi
+                        else
+                           output "failed."
+                        fi
+                     fi               
+
+
+}
+
+function type.zfs_resume.perform.backup() {
+
+   local -i stat=0
+
+   output "- resuming token[$(echo "${RUNTIME_ITEM["zfs.resume.token"]}" | cut -c-10)...]"
+   ssh "${RUNTIME["BACKUP_HOSTNAME"]}" zfs send -vt "${RUNTIME_ITEM["zfs.resume.token"]}" \
+   | timeout --foreground 1m zfs receive -s -v -eF "${RUNTIME_ITEM["zfs.subvol"]}" | tee "${RUNTIME_ITEM["logfile"]}"
+
+   z_stat=${PIPESTATUS[1]}
+   # status of the receive side
+   if [ ${z_stat} -eq 0 ]
+   then
+      # ok or timeout
+      output "- sync completed..."
+      SUMMARY[${#SUMMARY[@]}]="I.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} resumed and completed."
+   elif [ ${z_stat} -eq 124 ]
+   then
+      output "- full sync hit timeout... resume next time..."
+      SUMMARY[${#SUMMARY[@]}]="W.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} hit time out continue next time."
+      stat=1
+   else
+      output "- something went wrong...removing remote snapshot..."
+      stat=1
+      SUMMARY[${#SUMMARY[@]}]="E.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} something went wrong with resume."
+   fi
+
+   return ${stat}
+
+}
+

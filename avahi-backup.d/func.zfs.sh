@@ -34,7 +34,8 @@ function zfs.snapshot() {
 
 function zfs.create_subvol() {
 
-   if [ "$(find $0 -printf "%F\n")" = "zfs" ]
+   # check if we are on a zfs fs
+   if [ "$(find $(pwd) -maxdepth 0 -type d -printf "%F\n")" = "zfs" ]
    then
       if zfs list "${1//\/\//\/}" >> /dev/null 2>&1
       then
@@ -43,6 +44,9 @@ function zfs.create_subvol() {
          zfs create "${1//\/\//\/}"
 	      output "- create subvol: $1"
       fi
+   else
+      output "Error: ask to create a subvol on a non zfs cwd!"
+      exit 1
    fi
 
 }
