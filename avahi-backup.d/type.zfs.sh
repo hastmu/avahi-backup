@@ -358,38 +358,6 @@ function type.zfs_enc_full.perform.backup() {
    # stat=1
    return ${stat}
 
-                     output "- no last backup snapshot -> full"
-                     # mark it with a snapshot for next increament update
-                     output "- create remote snapshot @zfsbackup-full..."
-                     if [ -z "${last_snap}" ]
-                     then
-                        if ssh.cmd "${b_host}" zfs snapshot "${value}@zfsbackup-full"
-                        then
-                           output "- start send-receive..."
-                           if [ ${encryption} -eq 1 ]
-                           then
-                              # encrypted
-                              ssh.cmd "${b_host}" zfs send -w "${value}@zfsbackup-full" \
-                              | zfs receive -s -v -eF "${BROOT_TARGET}"
-                           else
-                              # not encrypted
-                              ssh.cmd "${b_host}" zfs send "${value}@zfsbackup-full" \
-                              | zfs receive -s -x encryption -x keyformat -v -eF "${BROOT_TARGET}"
-                           fi
-                           if [ $? -eq 0 ]
-                           then
-                              continue
-                           else
-                              output "! failed cleanup just created snapshot"
-                              ssh.cmd "${b_host}" zfs destroy -v "${value}@zfsbackup-full"
-                              continue
-                           fi
-                        else
-                           output "failed."
-                        fi
-                     fi               
-
-
 }
 
 
