@@ -1,14 +1,36 @@
+![Static Badge](https://img.shields.io/badge/Status-PoC-orange?style=flat) ![Static Badge](https://img.shields.io/badge/Target--Audience-Home-green?style=flat)
+
 # avahi-backup
 avahi based Backup as a Service (BaaS) ;)
+
+Clients tell what they would like to have backup-ed and the server takes care about it, generally no central configuration for clients needed.
+(besides onetime authorization)
 
 # Roadmap
 
 * [X] Show up at github
   * [X] document global concept
-  * [X] support rsync + zfs send (full+incremental+resume-token, plain and encrypted=raw)
 * [ ] PoC
+  * [X] support of rsync backup method
+  * [X] support of zfs send backup method (full+incremental+resume-token, plain)
+      * [X] Full/Incremental
+      * [X] plain/encrypted
+      * [X] Support for resume-token (resume transfer)
+  * [X] support for proxmox targets
+      * [ ] Targets types
+        * [ ] lxc containers
+        * [ ] vms
+      * [ ] Storage types
+        * [ ] dir
+  * [ ] Restore concept
 * [ ] First full release
-* [ ] deb installation procedure
+  * [ ] deb installation procedure
+  * [ ] code cleanup
+  * [ ] full client and server workflow implemented (backup)
+* [ ] Beyond
+  * [ ] Implement restore concept (if there is interest)
+  * [ ] Support of for methods
+  * [ ] More options to configure static assumptions
 
 # what is this?
 
