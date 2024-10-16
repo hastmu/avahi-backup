@@ -8,6 +8,11 @@ function type.zfs.init() {
    output "init - type - zfs"
 }
 
+# TODO:
+# - update all sents with timeout
+# - make timeout a config options
+# - check snapshot cleanup
+
 # dummy functions for alternative types
 # zfs_resume     - resume token found
 # zfs_enc_full   - encrypted zfs fs full
@@ -303,6 +308,56 @@ function type.zfs_unenc_full.perform.backup() {
    # stat=1
    return ${stat}
 
+}
+
+function type.zfs_enc_full.perform.backup() {
+
+   local -i stat=0
+
+   # concept
+   # src has no old snapshot -> full / first sync
+   # if yes create a new snapshot at the source and inc to local storage
+   # if no  panic.
+
+   RUNTIME_ITEM["zfs.newsnapshot.name"]="zfsbackup-full"
+
+   output "- full sync of ${RUNTIME_ITEM["zfs.newsnapshot.name"]}"
+
+   if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs snapshot "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}"
+   then
+      output "- start full send-receive..."
+      local -i z_stat=0
+      # encryption
+      ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs send -w "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}" \
+      | timeout --foreground 1m zfs receive -s -v -eF "${RUNTIME_ITEM["zfs.subvol"]}" | tee "${RUNTIME_ITEM["logfile"]}"
+
+      z_stat=${PIPESTATUS[1]}
+      # status of the receive side
+      if [ ${z_stat} -eq 0 ]
+      then
+         # ok or timeout
+         output "- full sync completed..."
+      elif [ ${z_stat} -eq 124 ]
+      then
+         output "- full sync hit timeout... resume next time..."
+         SUMMARY[${#SUMMARY[@]}]="W.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} hit time out continue next time."
+         stat=1
+      else
+         output "- something went wrong...removing remote snapshot..."
+         ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" zfs destroy -v "${RUNTIME_ITEM["zfs"]}@${RUNTIME_ITEM["zfs.newsnapshot.name"]}" \
+         | tee "${RUNTIME_ITEM["logfile"]}"
+         stat=1
+         SUMMARY[${#SUMMARY[@]}]="E.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} something went wrong with full send."
+      fi
+   else
+      output "! ERROR: can not create remote new snapshot."
+      SUMMARY[${#SUMMARY[@]}]="E.ZFS: ${RUNTIME["BACKUP_HOSTNAME"]}:${RUNTIME_ITEM["zfs"]} can not create new remote snapshot. Broken."
+      stat=1
+   fi
+
+   # stat=1
+   return ${stat}
+
                      output "- no last backup snapshot -> full"
                      # mark it with a snapshot for next increament update
                      output "- create remote snapshot @zfsbackup-full..."
@@ -336,6 +391,7 @@ function type.zfs_unenc_full.perform.backup() {
 
 
 }
+
 
 function type.zfs_resume.perform.backup() {
 
