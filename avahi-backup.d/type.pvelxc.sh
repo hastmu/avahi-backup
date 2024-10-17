@@ -6,6 +6,37 @@
 
 function type.pvelxc.init() {
    output "init - type - pvelxc"
+   # "type=pvelxc,pvelxc=101:105:110:113:119:120,stop_hours=5,every_sec=86400"
+   # may show up, therefore one has to push the items to the stack
+   if [[ ${RUNTIME_ITEM["pvelxc"]} =~ : ]]
+   then
+      output "- splitting item: ${RUNTIME_ITEM["pvelxc"]}"
+      local item=""
+      local new_item=""
+      local -i first=1
+      local keep_item=""
+      local keep_pvelxc=""
+      for item in ${RUNTIME_ITEM["pvelxc"]//:/ }
+      do
+         new_item=${RUNTIME_ITEM["item"]//${RUNTIME_ITEM["pvelxc"]}/${item}}
+         #declare -p RUNTIME_ITEM
+         if [ ${first} -eq 1 ]
+         then
+            first=0
+            output "- keep first: ${item} as current"
+            keep_pvelxc="${item}"
+            keep_item="${new_item}"
+         else
+            output "- queue:    ${item}"
+            output "  new item: ${new_item}"
+            items[${#items[@]}]="${new_item}"
+         fi
+      done
+      RUNTIME_ITEM["pvelxc"]="${keep_pvelxc}"
+      RUNTIME_ITEM["item"]="${keep_item}"
+      output "- proceed with ${RUNTIME_ITEM["pvelxc"]}"
+#      declare -p RUNTIME_ITEM
+   fi
 }
 
 # Generally you can consume any item in RUNTIME and RUNTIME_ITEM
