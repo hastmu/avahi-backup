@@ -1,5 +1,6 @@
 [Unit]
 Description=Avahi-Backup Client (Announcements)
+After=avahi-daemon.service
 
 [Service]
 Type=simple
@@ -7,5 +8,4 @@ Restart=always
 ExecStart=/usr/local/sbin/avahi-backup.sh backup-client
 
 [Install]
-After=avahi-daemon.service
 WantedBy=multi-user.target
