@@ -254,8 +254,16 @@ backup-client) {
 
    if [ -z "$2" ]
    then
+      s_time=$(date +%s)
       sudo -u nobody timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
-      exec $0 ${1+"$@"}
+      age=$(( $(date +%s) - s_time ))
+      if [ $age -gt 60 ]
+      then
+         exec $0 ${1+"$@"}
+      else
+         output "- restart faster than 60 seconds, something is wrong."
+         exit 1
+      fi
    else
       echo avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
    fi
