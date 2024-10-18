@@ -2,4 +2,7 @@
 
 echo "$0 : $@"
 
+# reloading systemd services
+systemctl daemon-reload
+
 exit 0
