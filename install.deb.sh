@@ -23,7 +23,7 @@ Version: ${VERSION}-${BRANCH}-${HEADHASH}
 Section: base 
 Priority: optional 
 Architecture: all 
-Depends: coreutils, grep, mawk, avahi-utils, zfsutils-linux
+Depends: coreutils, sudo, grep, mawk, avahi-utils, zfsutils-linux, rsync, procps
 Maintainer: nomail@nomail.no
 Description: avahi based backup as a service
 EOF
@@ -37,13 +37,20 @@ EOF
 
    # move client part
    mv "${T_DIR}/.src/${REPO##*/}/etc" "${T_DIR}/."
+   mv "${T_DIR}/.src/${REPO##*/}/lib" "${T_DIR}/."
+   cp -va ${T_DIR}/.src/${REPO##*/}/DEBIAN/* "${T_DIR}/DEBIAN/."
    
    mkdir -p "${T_DIR}/${TARGET_BASE}"
    mkdir -p "${T_DIR}/${TARGET_BASE}/bin"
    mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.d" "${T_DIR}/${TARGET_BASE}/bin/."
+   mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.sh" "${T_DIR}/${TARGET_BASE}/bin/."
+   mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.sh.client" "${T_DIR}/${TARGET_BASE}/bin/."
+   mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.sh.server" "${T_DIR}/${TARGET_BASE}/bin/."
 
    mkdir -p "${T_DIR}/usr/local/bin"
    mkdir -p "${T_DIR}/usr/local/sbin"
+   ln -s "../share/${NAME}/bin/avahi-backup.sh" "${T_DIR}/usr/local/bin/avahi-backup.sh"
+   ln -s "../share/${NAME}/bin/avahi-backup.sh" "${T_DIR}/usr/local/sbin/avahi-backup.sh"
    
    rm -Rf "${T_DIR}/.src"
 
@@ -54,8 +61,8 @@ EOF
 
 if dpkg -b "${T_DIR}" "${NAME}_${VERSION}_${HEADHASH}.deb"
 then
-#   apt-get install -y "$(pwd)/${NAME}_${VERSION}_${HEADHASH}.deb"
+   sudo apt-get install -y "$(pwd)/${NAME}_${VERSION}_${HEADHASH}.deb"
    rm -fv "$(pwd)/${NAME}_${VERSION}_${HEADHASH}.deb"
-#   dpkg -l "${NAME}"
+   dpkg -l "${NAME}"
 fi
 
