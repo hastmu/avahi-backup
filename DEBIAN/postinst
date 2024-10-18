@@ -13,7 +13,7 @@ echo "========================================================="
 systemctl enable avahi-backup-client.service
 
 systemctl restart avahi-backup-client.service
-systemctl status avahi-backup-client.service
+systemctl status --no-pager avahi-backup-client.service
 
 
 exit 0
