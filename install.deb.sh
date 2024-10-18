@@ -24,7 +24,7 @@ Section: base
 Priority: optional 
 Architecture: all 
 Depends: coreutils, sudo, grep, mawk, avahi-utils, rsync, procps
-Optional: zfsutils-linux
+Recommends: zfsutils-linux
 Maintainer: nomail@nomail.no
 Description: avahi based backup as a service
 EOF
