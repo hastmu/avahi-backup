@@ -10,6 +10,8 @@ echo "* Avahi-Backup Client"
 echo "* Please configure /etc/avahi-backup.d"
 echo "========================================================="
 
+systemctl enable avahi-backup-client.service
+
 systemctl restart avahi-backup-client.service
 systemctl status avahi-backup-client.service
 
