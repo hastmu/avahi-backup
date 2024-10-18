@@ -16,13 +16,18 @@ done
 RUNTIME["INCLUDE_DIR"]="${RUNTIME["_me"]%.*}.d"
 RUNTIME["output.prefix"]=""
 
-if [ -z "${_LOCKED_}" ]
-then
-   #echo -n "locking ..."
-   export _LOCKED_=1
-   exec flock -x -n ${RUNTIME["_me"]} ${RUNTIME["_me"]} ${1+"$@"}
-   exit 1
-fi
+function lock() {
+   # $1 ... lockname
+   if [ -z "${_LOCKED_}" ]
+   then
+      local lockname="$1"
+      shift
+      #echo -n "locking ..."
+      export _LOCKED_=1
+      exec flock -x -n ${RUNTIME["_me"]}.${lockname} ${RUNTIME["_me"]} ${1+"$@"}
+      exit 1
+   fi
+}
 
 # avahi-publish -s "backup-host" _backup._tcp 1111 path=/tmp path=/tmp2 path=/tmp3
 declare -A CFG
@@ -207,6 +212,8 @@ backup-client) {
    ##help## backup-client      ... sources config /etc/backup.d and scans all user homes for .backup,
    ##help##                        compiles avahi-publish, refresh after 1h.
 
+   lock client "${1+"$@"}"
+
    output "${CFG["name"]} client start..."
    declare -a TXT
    # items
@@ -271,6 +278,8 @@ backup-client) {
 } ;;
 
 backup) {
+
+   lock server "${1+"$@"}"
 
    output "${CFG["name"]} start backup at $(pwd)"
    if [ ! -e ".${CFG["name"]}.root" ]
