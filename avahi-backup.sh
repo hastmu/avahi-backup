@@ -207,16 +207,16 @@ backup-client) {
    ##help## backup-client      ... sources config /etc/backup.d and scans all user homes for .backup,
    ##help##                        compiles avahi-publish, refresh after 1h.
 
-   echo "${CFG["name"]} client start at $(date)"
+   output "${CFG["name"]} client start..."
    declare -a TXT
    # items
-   if [ -x "/etc/backup.d" ]
+   if [ -x "/etc/${CFG["name"]}.d" ]
    then
       # shellcheck disable=SC2044
-      for item in $(find /etc/backup.d -type f -user root -name "*.conf" -printf "%f\n")
+      for item in $(find /etc/${CFG["name"]}.d -type f -user root -name "*.conf" -printf "%f\n")
       do
          # shellcheck disable=SC1090
-         if source "/etc/backup.d/${item}"
+         if source "/etc/${CFG["name"]}.d/${item}"
          then
             echo "including ${item}"
          else
@@ -228,8 +228,8 @@ backup-client) {
    default_next=86400
    default_retention=$(( 30 * default_next ))
 
-   TXT[${#TXT[@]}]="path=/root,sec_to_next=${default_next},retention_in_sec=${default_retention}"
-   TXT[${#TXT[@]}]="path=/etc,sec_to_next=${default_next},retention_in_sec=${default_retention}"
+   TXT[${#TXT[@]}]="type=path,path=/root,sec_to_next=${default_next},retention_in_sec=${default_retention}"
+   TXT[${#TXT[@]}]="type=path,path=/etc,sec_to_next=${default_next},retention_in_sec=${default_retention}"
 
    # add all user homes which a .backup
    for u_home in $(getent passwd | cut -d: -f6)
@@ -244,23 +244,17 @@ backup-client) {
          # TODO: include into config
          # each TXT can be 255 chars 
          # conver to json
-         TXT[${#TXT[@]}]="path=${u_home},${sec_to_next},${retention_in_sec}"
-         JSON="$(jq -cn \
-            --arg "path" "${u_home}" \
-            --arg "retention_in_sec" "$(echo ${retention_in_sec} | cut -d= -f2)" \
-            --arg "sec_to_next" "$(echo ${sec_to_next} | cut -d= -f2)" \
-            "{\"Home:${u_home}\" : \$ARGS.named}")"
-
+         TXT[${#TXT[@]}]="type=path,path=${u_home},${sec_to_next},${retention_in_sec}"
       fi
    done
 
    # compile publish
    STR="${TXT[*]}"
-   echo "$(date) : ${STR}"
+   output "Concluding to ${STR}"
 
    if [ -z "$2" ]
    then
-      timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
+      sudo -u nobody -i timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
       exec $0 ${1+"$@"}
    else
       echo avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
