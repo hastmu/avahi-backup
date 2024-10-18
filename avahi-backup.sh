@@ -254,7 +254,7 @@ backup-client) {
 
    if [ -z "$2" ]
    then
-      sudo -u nobody -i timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
+      sudo -u nobody timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
       exec $0 ${1+"$@"}
    else
       echo avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name"]}" 1111 ${STR}
