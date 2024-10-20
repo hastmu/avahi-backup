@@ -223,7 +223,7 @@ init-backup-root) {
       set +e
       ( 
       (crontab -l || true) | grep -v "#${CFG["name"]}#" ;
-      echo "*/5 * * * * ${RUNTIME["_me"]} backup-cron "$(pwd)" 2>&1 | logger  #${CFG["name"]}#"
+      echo "*/5 * * * * ${RUNTIME["_me"]} backup-cron "$(pwd)" 2>&1 | logger -t ${CFG["name"]} #${CFG["name"]}#"
       ) | crontab
       set -e
       output "- installed/updated crontab"
