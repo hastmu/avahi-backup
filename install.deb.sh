@@ -23,7 +23,7 @@ Version: ${VERSION}-${BRANCH}-${HEADHASH}
 Section: base 
 Priority: optional 
 Architecture: all 
-Depends: coreutils, sudo, grep, mawk, avahi-utils, rsync, procps
+Depends: coreutils, sudo, grep, mawk, avahi-utils, rsync, procps, uuid-runtime, bsdutils, screen
 Recommends: zfsutils-linux
 Maintainer: nomail@nomail.no
 Description: avahi based backup as a service

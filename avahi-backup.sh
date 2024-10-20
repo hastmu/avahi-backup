@@ -34,6 +34,7 @@ declare -A CFG
 CFG["name"]="avahi-backup"
 CFG["zfs-metadata-prefix"]="${CFG["name"]}"
 CFG["avahi.service_name"]="_backup._tcp"
+CFG["avahi.service_name.server"]="_${CFG["name"]}-server._tcp"
 # TODO
 CFG["skip.backup.younger.than"]=86400
 CFG["zfs.zero_size_snapshot_cleanup_limit"]=1000
@@ -182,17 +183,110 @@ in
 
 init-backup-root) { 
    ##help## init-backup-root   ... marks the current directory as root of backups (currently it has to be a zfs based setup)
+   output ""
+   output "Setup ${CFG["name"]} Server..."
+   output "(if not already cd into your backup root, a zfs filesystem)"
+   output ""
    output "init backup root: $(pwd)"
-   touch ".${CFG["name"]}.root"
-   ln -s "${RUNTIME["_me"]}" "${CFG["name"]}.sh"
+   # TODO: check if ZFS
    RUNTIME["BACKUP_DATASET_ROOT"]="$(zfs.get_dataset.name "$(pwd)")"
    output "ZFS: ${RUNTIME["BACKUP_DATASET_ROOT"]}"
+   declare -A data=$(zfs.get.properties "${RUNTIME["BACKUP_DATASET_ROOT"]}")
+   output "     encryption[${data["encryption"]}] compression[${data["compression"]}]"
+   output ""
+   printf "%s" "$(output "Please enter 'yes' to continue, if not something else? ")"
+   read LINE
+   if [ "${LINE}" == "yes" ]
+   then
+      output ""
+      # put mark
+      if [ ! -e ".${CFG["name"]}.root" ]
+      then
+         output "- marking as root with '.${CFG["name"]}.root'"
+         touch ".${CFG["name"]}.root"
+      else
+         output "- already found root mark ('.${CFG["name"]}.root')"
+      fi
+      # check .ssh key
+      if [ ! -e ".ssh/${CFG["name"]}" ]
+      then
+         # create
+         output "- generate ssh key..."
+         mkdir -p .ssh
+         ssh-keygen -N "" -f ".ssh/${CFG["name"]}" -C "${CFG["name"]}-$(uuidgen)" >> /dev/null 2>&1
+      fi
+      output "- Please ensure clients allow root access via this key..."
+      output "---------------------------------------------------------"
+      output "Sever-Key: $(ssh-keygen -l -f ".ssh/${CFG["name"]}")"
+      output "---------------------------------------------------------"
+      #
+      set +e
+      ( 
+      (crontab -l || true) | grep -v "#${CFG["name"]}#" ;
+      echo "*/5 * * * * ${RUNTIME["_me"]} backup-cron "$(pwd)" 2>&1 | logger  #${CFG["name"]}#"
+      ) | crontab
+      set -e
+      output "- installed/updated crontab"
+      output "---------------------------------------------------------"
+      output "$(crontab -l | grep "#${CFG["name"]}#")"
+      output "---------------------------------------------------------"
+      output "- Done."
+
+   else
+      output ""
+      output "You entered -${LINE}-. Abort."
+      output ""
+   fi
+   exit 0
+
    # TODO
    # - create rsyncd.conf with includes
    
-   # detect right DATASET
-   # check if encrypted
-   # check for zfs
+} ;;
+
+backup-cron) {
+
+   # $2 ... pwd of actual backup, if exists go and execute
+
+   # exec backup
+   if [ -x "$2" ]
+   then
+      # check server announcement
+      if screen -ls "${CFG["name"]}-server"
+      then
+         : # found
+      else
+         screen -dmS "${CFG["name"]}-server" ${RUNTIME["_me"]} backup-server-announcement "$2"
+      fi
+      cd "$2" || exit 1
+      exec ${RUNTIME["_me"]} backup
+   else
+      output "Warning: ${CFG["name"]} backup root is not available. Backup skipped."
+   fi
+
+} ;;
+
+backup-server-announcement) {
+   
+   # $2 ... backup root
+   cd "$2"
+   declare -a TXT
+   TXT[${#TXT[@]}]="\"ssh-key=$(cat ".ssh/${CFG["name"]}.pub")\""
+   TXT[${#TXT[@]}]="\"ssh-fingerprint=$(ssh-keygen -l -f ".ssh/${CFG["name"]}")\""
+   STR="${TXT[*]}"
+   s_time=$(date +%s)
+   output "${STR}"
+   echo sudo -u nobody timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name.server"]}" 1111 ${STR}   
+   sudo -u nobody timeout 1h avahi-publish -s "backup-$(hostname)" "${CFG["avahi.service_name.server"]}" 1111 ${STR}   
+   age=$(( $(date +%s) - s_time ))
+   if [ $age -gt 60 ]
+   then
+      exec $0 ${1+"$@"}
+   else
+      output "- restart faster than 60 seconds, something is wrong."
+      exit 1
+   fi
+
 
 } ;;
 
