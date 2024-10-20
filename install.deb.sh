@@ -1,12 +1,25 @@
 #!/bin/bash
 
 # defaults
-echo "- BRANCH [${BRANCH:=main}]"
+BRANCH="${BRANCH:=main}"
 NAME="avahi-backup"
 VERSION="1.0.0"
 HEADHASH="$(date +%s)"
 TARGET_BASE="/usr/local/share/${NAME}"
 REPO="https://github.com/hastmu/avahi-backup"
+REMOTE_HASH="$(git ls-remote ${REPO} | grep ${BRANCH} | awk '{ print $1 }')"
+echo "- BRANCH [${BRANCH:=main}] ${REMOTE_HASH}"
+
+# check if already installed
+
+INST_HASH="$(apt-cache show ${NAME} | grep REMOTE_HASH | awk '{ print $2 }')"
+echo "- INST_HASH: ${INST_HASH}"
+
+if [ "${INST_HASH}" == "${BRANCH}-${REMOTE_HASH}" ]
+then
+   echo "- no updates."
+   exit 
+fi
 
 # workdir
 T_DIR=$(mktemp -d)
@@ -27,6 +40,7 @@ Depends: coreutils, sudo, grep, mawk, avahi-utils, rsync, procps, uuid-runtime, 
 Recommends: zfsutils-linux
 Maintainer: nomail@nomail.no
 Description: avahi based backup as a service
+    REMOTE_HASH ${BRANCH}-${REMOTE_HASH}
 EOF
 
    # clone repo
