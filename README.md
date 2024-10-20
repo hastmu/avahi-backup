@@ -24,7 +24,8 @@ Clients tell what they would like to have backup-ed and the server takes care ab
         * [ ] dir
   * [ ] Restore concept
 * [ ] First full release
-  * [ ] deb installation procedure
+  * [X] deb installation procedure
+  * [ ] Update documentation
   * [ ] code cleanup
   * [ ] full client and server workflow implemented (backup)
 * [ ] Beyond
