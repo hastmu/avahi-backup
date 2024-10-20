@@ -3,9 +3,9 @@
 
 echo "$0 : $@"
 
-systemctl stop avahi-backup-client.service
-systemctl disable avahi-backup-client.service
-systemctl status avahi-backup-client.service
+systemctl --no-pager stop avahi-backup-client.service
+systemctl --no-pager disable avahi-backup-client.service
+systemctl --no-pager status avahi-backup-client.service
 
 
 exit 0
