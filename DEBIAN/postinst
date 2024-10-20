@@ -5,9 +5,9 @@ echo "$0 : $@"
 # reloading systemd services
 systemctl daemon-reload
 
-systemctl enable avahi-backup-client.service
-systemctl restart avahi-backup-client.service
-systemctl status --no-pager avahi-backup-client.service
+systemctl --no-pager enable avahi-backup-client.service
+systemctl --no-pager restart avahi-backup-client.service
+systemctl --no-pager status avahi-backup-client.service
 echo "=========================================================="
 echo "* Avahi-Backup Client"
 echo "* Please configure /etc/avahi-backup.d for manual sources."
