@@ -41,13 +41,24 @@ CFG["zfs.zero_size_snapshot_cleanup_limit"]=1000
 
 
 # declare -p RUNTIME
-declare -p CFG
+#declare -p CFG
 
 # legacy # service_name="_backup._tcp"
 
-function output() {
-   echo "[$(date +%Y-%m-%d_%H:%M:%S)]: ${RUNTIME["output.prefix"]}${1+"$@"}"
-}
+export _LOGGER=${_LOGGER:=$(pgrep -P $PPID logger | wc -l)}
+
+if [ ${_LOGGER} -eq 0 ]
+then
+   # no logger therefore date
+   function output() {
+      echo "[$(date +%Y-%m-%d_%H:%M:%S)]: ${RUNTIME["output.prefix"]}${1+"$@"}"
+   }
+else
+   # logger therefore date
+   function output() {
+      echo "${RUNTIME["output.prefix"]}${1+"$@"}"
+   }
+fi
 
 function fn_exists() { declare -F "$1" > /dev/null; }
 
@@ -139,12 +150,26 @@ function rsync.file() {
    # $3 ... logfile
    rsync -e "ssh -i .ssh/backup" \
       -avc --bwlimit=40000 --delete --exclude="lost+found" \
+      --stats --progress --inplace --partial --block-size=$(( 128 * 1024 )) \
+      "${1}" \
+      "${2}" \
+      | tee "${3}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
+      | stdbuf -i0 -oL -eL grep "%" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
+}
+
+function rsync.file2() {
+   # $1 ... source
+   # $2 ... target
+   # $3 ... logfile
+   timeout --foreground 1m rsync -e "ssh -i .ssh/backup" \
+      -avc --bwlimit=40000 --delete --exclude="lost+found" \
       --info=progress2 --stats --inplace --partial --block-size=$(( 128 * 1024 )) \
       "${1}" \
       "${2}" \
       | tee "${3}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
       | stdbuf -i0 -oL -eL grep "%" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
 }
+
 
 function create.rsync.restore.conf() {
    :
@@ -375,6 +400,15 @@ backup) {
 
    lock server "${1+"$@"}"
 
+   # set io to idle
+   ionice -c 3 -t -p $$
+   schedtool -D $$
+   taskset -cp 0 $$
+
+   taskset -p $$
+   schedtool $$
+   ionice -p $$
+
    output "${CFG["name"]} start backup at $(pwd)"
    if [ ! -e ".${CFG["name"]}.root" ]
    then
@@ -555,11 +589,12 @@ backup) {
          # preflight check
          if fn_exists "type.${RUNTIME_ITEM["type"]}.check.preflight"
          then
+            output "= PRE-FLIGHT ="
             if "type.${RUNTIME_ITEM["type"]}.check.preflight"
             then
                output "- pre-flight check ok"
             else
-               output "! pre-flight check failed. - please fix"
+               output "! pre-flight check failed. - please fix, if needed."
                continue
             fi
          fi
