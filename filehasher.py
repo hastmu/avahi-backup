@@ -313,6 +313,10 @@ class FileHasher():
                   print(f"  - patch chk {idx}")
                   chk_data=patch_data_file.read(self.chunk_size)
                   target_file.seek(idx * self.chunk_size)
+                  data=hashlib.sha256(chk_data)
+                  # convert to string
+                  self.hash_obj[self.chk]=data.hexdigest()
+                  self.save_hashes=True
                   target_file.write(chk_data)
          
          print(f"- Done.")
