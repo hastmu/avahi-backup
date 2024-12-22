@@ -62,10 +62,15 @@ EOF
    mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.sh.client" "${T_DIR}/${TARGET_BASE}/bin/."
    mv "${T_DIR}/.src/${REPO##*/}/avahi-backup.sh.server" "${T_DIR}/${TARGET_BASE}/bin/."
 
+   mv "${T_DIR}/.src/${REPO##*/}/filehasher.py" "${T_DIR}/${TARGET_BASE}/bin/."
+
    mkdir -p "${T_DIR}/usr/local/bin"
    mkdir -p "${T_DIR}/usr/local/sbin"
    ln -s "../share/${NAME}/bin/avahi-backup.sh" "${T_DIR}/usr/local/bin/avahi-backup.sh"
    ln -s "../share/${NAME}/bin/avahi-backup.sh" "${T_DIR}/usr/local/sbin/avahi-backup.sh"
+
+   ln -s "../share/${NAME}/bin/filehasher.py" "${T_DIR}/usr/local/bin/filehasher.py"
+   ln -s "../share/${NAME}/bin/filehasher.py" "${T_DIR}/usr/local/sbin/filehasher.py"
    
    rm -Rf "${T_DIR}/.src"
 
