@@ -1,4 +1,4 @@
-![Static Badge](https://img.shields.io/badge/Status-PoC-orange?style=flat) ![Static Badge](https://img.shields.io/badge/Target--Audience-Home-green?style=flat)
+![Static Badge](https://img.shields.io/badge/Status-PoC-orange?style=flat) ![Static Badge](https://img.shields.io/badge/Target--Audience-Home|AVAHI--ENVs-green?style=flat)
 
 # avahi-backup
 avahi based Backup as a Service (BaaS) ;)
@@ -12,16 +12,17 @@ Clients tell what they would like to have backup-ed and the server takes care ab
   * [X] document global concept
 * [ ] PoC
   * [X] support of rsync backup method
+      * [X] auto exclude sshfs mounts
   * [X] support of zfs send backup method
       * [X] Full/Incremental
       * [X] plain/encrypted
       * [X] Support for resume-token (resume transfer)
   * [X] support for proxmox targets
       * [ ] Targets
-        * [ ] lxc containers
+        * [X] lxc containers
         * [ ] vms
       * [ ] Storage types
-        * [ ] dir
+        * [X] dir
   * [ ] Restore concept
 * [ ] First full release
   * [X] deb installation procedure
