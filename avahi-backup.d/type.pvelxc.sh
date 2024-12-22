@@ -4,7 +4,10 @@
 # checkout https://github.com/hastmu/avahi-backup 
 #
 
+declare -A _PVELXC
+
 function type.pvelxc.init() {
+
    output "init - type - pvelxc"
    # "type=pvelxc,pvelxc=101:105:110:113:119:120,stop_hours=5,every_sec=86400"
    # may show up, therefore one has to push the items to the stack
@@ -41,62 +44,224 @@ function type.pvelxc.init() {
 
 # Generally you can consume any item in RUNTIME and RUNTIME_ITEM
 
-function type.template.init() {
-   # do what is needed for a init of your type
-   output "init - type - path"
-   # uncomment for info #
-   # declare -p RUNTIME
-   # declare -p RUNTIME_ITEM
-}
-
-function type.template.outline.prefix() {
+function type.pvelxc.outline.prefix() {
    # configure the prefix during runtime
-   echo "#${RUNTIME["BACKUP_CLIENTNAME"]}/${RUNTIME_ITEM["type"]}[${RUNTIME_ITEM["path"]}]# "
+   echo "#${RUNTIME["BACKUP_CLIENTNAME"]}/${RUNTIME_ITEM["type"]}[${RUNTIME_ITEM["pvelxc"]}]# "
 }
 
-function type.template.logbase.name() {
+function type.pvelxc.logbase.name() {
    # set how your logs are structured
-   echo "${RUNTIME_ITEM["path"]//\//_}"
+   echo "LXC-${RUNTIME_ITEM["pvelxc"]//\//_}"
 }
 
-function type.template.logfile.postfix() {
+function type.pvelxc.logfile.postfix() {
    # set how your new logs are structured
    echo ".$(date +%Y-%m-%d_%H:%M).log"
 }
 
-function type.template.subvol.name() {
+function type.pvelxc.subvol.name() {
    # set how your subvol below the node subvol shall be called.
    local tmpstr=""
-   tmpstr="${RUNTIME_ITEM["path"]#*/}"
+   tmpstr="LXC-${RUNTIME_ITEM["pvelxc"]#*/}"
    tmpstr="${tmpstr//\//_}"
    echo "${tmpstr}"
 }
 
-function type.template.summary() {
+function type.pvelxc.summary() {
    # what you like to add to the summary after all runs.
-   SUMMARY[${#SUMMARY[@]}]="S.TEMPLATE: was used."
+   declare -p _PVELXC >&2 
+   SUMMARY[${#SUMMARY[@]}]="S.PVELXC: skipped[${_PVELXC["skip_counter"]}] (stop_hour)"
+
 }
 
-function type.template.check.preflight() {
+function type.pvelxc.check.preflight() {
    # pre-flight check return != 0 will not execute perform.backup
    local -i error_count=0
    local -i stat=0
-   # first check
-   /bin/true
-   stat=$?
-   error_count=$(( error_count + stat ))
-   # second check
-   /bin/true
-   stat=$?
+   # first check - stopping hour?
+   declare -p RUNTIME
+   declare -p RUNTIME_ITEM
+   declare -p RUNTIME_NODE
+   local hour="$(date +%H)"
+   local t_hour=${RUNTIME_ITEM["stop_hours"]:=5}
+   local h_item=""
+   local -i h_match=0
+   for h_item in ${t_hour//,/ }
+   do
+      if [ ${h_item} -eq ${hour} ]
+      then
+         h_match=1
+         break
+      fi
+   done
+   if [ $h_match -eq 1 ] || [ ${RUNTIME_ITEM["pvelxc"]} -eq 101000 ]
+   then
+      # stop hours match
+      stat=0
+      output "- STOP_HOURS[${t_hour}] - CURRENT[${hour}] - MATCH"
+
+      # second check - pvelxc exists
+      if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" >> /dev/null 2>&1
+      then
+         RUNTIME_ITEM["lxc_status"]="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" | awk '{ print $2 }')"
+         output "- LXC[${RUNTIME_ITEM["pvelxc"]}] exists status[${RUNTIME_ITEM["lxc_status"]}]"
+         stat=0
+      else
+         output "- LXC[${RUNTIME_ITEM["pvelxc"]}] does not exist or node vanished."
+         stat=1
+      fi
+      error_count=$(( error_count + stat ))
+
+   else
+      # out of stop hours
+      _PVELXC["skip_counter"]=$(( ${_PVELXC["skip_counter"]:0} + 1 ))
+      stat=1
+      output "- STOP_HOURS[${t_hour}] - CURRENT[${hour}] - UNMATCH - skipping"
+   fi
    error_count=$(( error_count + stat ))
    # result
    return ${error_count}
+
 }
 
-function type.template.perform.backup() {
+function type.pvelxc.perform.backup() {
    # perform your backup return 0 indicates all was fine, != 0 something was wrong.
    local -i stat=0
-   /bin/true
-   stat=$?
+   # check if we need to shutdown
+   local lxc_restart=0
+   if [ "${RUNTIME_ITEM["lxc_status"]}" == "running" ]
+   then
+      lxc_restart=1
+      output "- shutting down lxc..."
+      ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct shutdown "${RUNTIME_ITEM["pvelxc"]}"
+   fi
+   # get config
+   output "- target dir: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
+   output "  - get lxc config (pct config)"
+   ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct config "${RUNTIME_ITEM["pvelxc"]}" > "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/lxc.config"
+   # get storage config
+   if [ -z "${RUNTIME_NODE["pve.storage"]}" ]
+   then
+      output "  - fetching storage config..."
+      eval $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm status | grep " active " | awk '{ printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage." $1,$2) } END { printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage","done")}')
+   fi
+
+   # backup storage items
+   local storage_item=""
+   local storage_path=""
+   output "  - backup storage items..."
+   for storage_item in $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct df "${RUNTIME_ITEM["pvelxc"]}" | grep -E "(^rootfs|^mp)" | awk '{ print $2 }')
+   do
+      if [ -z "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" ]
+      then
+         output "    - storage item: ${storage_item} -> no storage config"
+      else
+         output "    - storage item: ${storage_item} -> ${storage_item%%:*} type[${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}]"
+         storage_path="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm path "${storage_item}")"
+         output "      path: ${storage_path}"
+         # copy
+         trg="${storage_item//\//_}"
+         if [ "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" == "dir" ]
+         then
+            output "      backup_name: ${trg} ... rsyncing..."
+            output "      log: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" 
+            s_time=$(date +%s)
+            rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"
+            e_time=$(date +%s)
+            output "      took: $(( e_time - s_time )) sec. / $(( (e_time - s_time)/60 )) min."
+         fi
+
+      fi
+   done
+   # cleanup old items.
+   output "TODO - cleanup old items"
+   find "${BACKUP_TARGET_DIR}/" ! -newer "${BACKUP_TARGET_DIR}/lxc.config"
+
+
+   # restart if we shutdown the lxc
+   if [ ${lxc_restart} -eq 1 ]
+   then
+      output "- starting lxc..."
+      ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct start "${RUNTIME_ITEM["pvelxc"]}"
+   fi
+   # end
+   # mark broken for dev.
+   stat=1
    return ${stat}
+}
+
+function dummy() {
+
+         # pvelxc
+         if [ "${RUNTIME_ITEM["type"]}" == "xxxxpvelxc" ]
+         then
+            output "here we go..."
+            declare -p RUNTIME_ITEM
+            for lxc_id in ${RUNTIME_ITEM["pvelxc"]//:/ }
+            do
+
+               output "TODO: based on lxc state trigger shutdown"
+               lxc_restart=0
+               if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status ${lxc_id} >> /dev/null 2>&1
+               then
+#                  lxc_status="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status ${lxc_id} | awk '{ print $2 }')"
+#                  output "- LXC[${lxc_id}] exists status[${lxc_status}]"
+#                  # mark to restart if running
+#                  if [ "${lxc_status}" == "running" ]
+#                  then
+#                     lxc_restart=1
+#                     output "- shutting down lxc..."
+#                     ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct shutdown ${lxc_id}
+#                  fi
+#                  output "TODO: get BOM"
+#                  output "- get lxc config (pct config)"
+#                  ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct config ${lxc_id} > "${BACKUP_TARGET_DIR}/lxc.config"
+                  output "TODO: get BOM - get storage items"
+#                  if [ -z "${RUNTIME_NODE["pve.storage"]}" ]
+#                  then
+#                     output "- fetching storage config..."
+#                     eval $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm status | grep " active " | awk '{ printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage." $1,$2) } END { printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage","done")}')
+#                  fi
+                  declare -p RUNTIME_NODE
+                  for storage_item in $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct df ${lxc_id} | grep -E "(^rootfs|^mp)" | awk '{ print $2 }')
+                  do
+                     if [ -z "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" ]
+                     then
+                        output "- storage item: ${storage_item} -> no storage config"
+                     else
+                        output "- storage item: ${storage_item} -> ${storage_item%%:*} type[${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}]"
+                        storage_path="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm path "${storage_item}")"
+                        output "  path: ${storage_path}"
+                        # copy
+                        trg="${storage_item//\//_}"
+                        if [ "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" == "dir" ]
+                        then
+                           output "  backup_name: ${trg} ... rsyncing..."
+                           s_time=$(date +%s)
+                           rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${BACKUP_TARGET_DIR}/${trg}" "${logfile}"
+                           output "  took: $(( $(date +%s) - s_time )) sec."
+                        fi
+
+                     fi
+                  done
+                  # cleanup old items.
+                  output "TODO - cleanup old items"
+                  find "${BACKUP_TARGET_DIR}/" ! -newer "${BACKUP_TARGET_DIR}/lxc.config"
+                  ls -hla "${BACKUP_TARGET_DIR}/"
+                  output "TODO: based on lxc state start it again"
+#                  if [ ${lxc_restart} -eq 1 ]
+#                  then
+#                     output "- starting lxc..."
+#                     ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct start ${lxc_id}
+#                  fi
+               else
+                  output "ERROR: can not get status for LXC[${lxc_id}] - please fix it"
+               fi
+            done
+            # cleanup
+            zfs.clean.snapshots "${ZFS_NAME_OF_SUBVOL}"
+            continue
+         fi
+
+
 }
