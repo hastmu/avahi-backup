@@ -121,6 +121,7 @@ class FileHasher():
       # defaults
       self.hash_obj={}
       self.mtime=0
+      self.save_hashes=False
 
       # method
       self.method=hash_method
@@ -151,6 +152,7 @@ class FileHasher():
          # TODO: check method
          if data["mtime"] != self.inputfile_stats.st_mtime:
             print(f"file changed - do not load old hashes...")
+            self.save_hashes=True
          else:
             self.hash_obj=data["hashes"]
             #print(self.hash_obj)
@@ -192,6 +194,7 @@ class FileHasher():
          read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
 
          for piece in self._read_file_in_chunks(f,self.chunk_size):
+            self.save_hashes=True
             read_speed.update_run(self.chunk_size)
             func(piece)
             self.chk=self.chk+1
@@ -208,6 +211,7 @@ class FileHasher():
          # create hash if outdated
          if len(self.hash_obj) == 0:
 #            self.hash_file(incremental=True)
+            self.save_hashes=True
             self.hash_obj={}
          # prepare delta file
 
@@ -248,6 +252,7 @@ class FileHasher():
                func(data_chunk)
                self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
                input_hash=self.hash_obj[self.chk]
+               self.save_hashes=True
 #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
 
             if compare_hash == False:
@@ -313,14 +318,17 @@ class FileHasher():
 
    def save_hash(self):
 
-      data={}
-      data["hashes"]=self.hash_obj
-      data["mtime"]=self.inputfile_stats.st_mtime
-      print(f"write hashfile [{len(self.hash_obj)}]: {self.hashfile}...")
-      
-      # save
-      with open(self.hashfile, 'wb') as handle:
-         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      if self.save_hashes == True:
+         data={}
+         data["hashes"]=self.hash_obj
+         data["mtime"]=self.inputfile_stats.st_mtime
+         print(f"write hashfile [{len(self.hash_obj)}]: {self.hashfile}...")
+         
+         # save
+         with open(self.hashfile, 'wb') as handle:
+            pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+      else:
+         print(f"! no changed hashes detect - no update on hashfile.")
 
 FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size)
 if args.verify_against == False and args.apply_delta_file == False:
