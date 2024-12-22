@@ -343,7 +343,7 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-version="1.0.1"
+version="1.0.2"
 
 if args.version == True:
    print(f"{version}")
@@ -371,7 +371,7 @@ else:
       print(f"verifing against: {args.verify_against}")
       FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
       if args.delta_file != False:
-         if len(self.mismatched_idx)>0:
+         if len(FH.mismatched_idx)>0:
             # there is a delta exit = 0
             exit(0)
          else:
