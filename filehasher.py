@@ -315,7 +315,7 @@ class FileHasher():
                   target_file.seek(idx * self.chunk_size)
                   data=hashlib.sha256(chk_data)
                   # convert to string
-                  self.hash_obj[self.chk]=data.hexdigest()
+                  self.hash_obj[idx]=data.hexdigest()
                   self.save_hashes=True
                   target_file.write(chk_data)
          
