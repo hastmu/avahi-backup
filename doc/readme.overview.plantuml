@@ -56,7 +56,42 @@ client -> avahi.announcement: Default register /etc /root + found ones
 
 backup -> avahi.announcement: reads service announcements from network
 backup -[#Grey]-> client: WIP: updates .backup with credentials for the restore-rsync share
-backup -> client: rsyncs or zfs send announced sources to server
+backup -> client: trigger backups of announced backup-types
+
+group Backup-Types
+
+else
+
+group#LightYellow #LightBlue Path (rsync)
+else Pre-Flight Check
+
+backup -> client: check if rsync is available
+backup -> client: check if source to be backuped is available
+backup -> client: check if there are sshfs mount inside the source tree if so exclude them
+
+else Backup
+else Summary
+end group
+
+else 
+
+group#LightYellow #LightBlue ZFS
+else Pre-Flight Check
+else Backup
+else Summary
+end group
+
+
+else 
+
+group#LightYellow #LightBlue PVE-LXC
+else Pre-Flight Check
+else Backup
+else Summary
+end group
+
+end group 
+
 local.storage -> backup.storage: copy backup (full or incremental)
 
 
