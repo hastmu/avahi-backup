@@ -345,6 +345,12 @@ else:
       else:
          FH.hash_file(incremental=True)
 
+      # feedback via exit code if there was a hash update.
+      if FH.save_hashes == True:
+         exit(1)
+      else:
+         exit(0)
+
    elif args.verify_against != False:
       # verify branch
       print(f"verifing against: {args.verify_against}")
