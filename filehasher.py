@@ -328,7 +328,7 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-version="1.0.0"
+version="1.0.1"
 
 if args.version == True:
    print(f"{version}")
