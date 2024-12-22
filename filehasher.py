@@ -259,9 +259,10 @@ class FileHasher():
             # compare
             if input_hash == compare_hash:
                match=match+1
-               print(f"match at {self.chk}")
-               print(f"SRC[{input_hash}]")
-               print(f"TRG[{compare_hash}]")
+               print(f"M", end="")
+               #print(f"match at {self.chk}")
+               #print(f"SRC[{input_hash}]")
+               #print(f"TRG[{compare_hash}]")
             else:
                mismatch=mismatch+1
                if write_delta_file != False:
@@ -270,14 +271,17 @@ class FileHasher():
                   self.mismatched_idx.append(self.chk)
                   # seek source file
                   if data_chunk == False:
-                     print(f"- refresh read chk {self.chk}...")
+                     print(f"R", end="")
+                     #print(f"- refresh read chk {self.chk}...")
                      source_file.seek(self.chk*self.chunk_size)
                      data_chunk=source_file.read(self.chunk_size)
                   delta_file.write(data_chunk)
 
-               print(f"mismatch at {self.chk}")
-               print(f"SRC[{input_hash}]")
-               print(f"TRG[{compare_hash}]")
+               print(f"!", end="")
+               #print(f"mismatch at {self.chk}")
+               #print(f"SRC[{input_hash}]")
+               #print(f"TRG[{compare_hash}]")
+         print(f"")
          print(f"\33[2K\r",end='\r')
          print(f"- verified matching {match}, mismatching {mismatch}.")
          if write_delta_file != False:
