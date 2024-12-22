@@ -7,9 +7,10 @@ import pickle
 import argparse
 
 parser = argparse.ArgumentParser("filehasher")
+parser.add_argument("--version", action='store_true', help="show version and exit")
 
 group = parser.add_argument_group('Hashing...')
-group.add_argument("inputfile", help="file which should be hashed.", type=str)
+group.add_argument("--inputfile", help="file which should be hashed.", type=str, default=False)
 group.add_argument("--min-chunk-size", help="smallest chunk for hashing.", type=int, default=8192)
 group.add_argument("--build-only", help="build only - no compare", type=bool, default=True)
 group.add_argument("--force-refresh", action='store_true', help="refresh also available hashes in build-only mode")
@@ -21,13 +22,10 @@ group = parser.add_argument_group('Patching...')
 group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
 args = parser.parse_args()
 
-print (args)
-
 # exit function
 def save_hash_file():
    FH.save_hash()
 
-atexit.register(save_hash_file)
 
 import signal
 import sys
@@ -330,26 +328,35 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size)
-if args.verify_against == False and args.apply_delta_file == False:
-   # normal hashing 
-   if args.force_refresh == True:
-      FH.hash_file(incremental=False)
-   else:
-      FH.hash_file(incremental=True)
+version="1.0.0"
 
-elif args.verify_against != False:
-   # verify branch
-   print(f"verifing against: {args.verify_against}")
-   FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
-
-elif args.apply_delta_file != False:
-   print(f"- file to be patched: {args.inputfile}")
-   print(f"- delta file:         {args.apply_delta_file}")
-   FH.patch(delta_file=args.apply_delta_file)
-   pass
-
+if args.version == True:
+   print(f"{version}")
 else:
-   raise Exception("Unknown execution mode")
+   print (args)
+
+   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size)
+   atexit.register(save_hash_file)
+
+   if args.verify_against == False and args.apply_delta_file == False:
+      # normal hashing 
+      if args.force_refresh == True:
+         FH.hash_file(incremental=False)
+      else:
+         FH.hash_file(incremental=True)
+
+   elif args.verify_against != False:
+      # verify branch
+      print(f"verifing against: {args.verify_against}")
+      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
+
+   elif args.apply_delta_file != False:
+      print(f"- file to be patched: {args.inputfile}")
+      print(f"- delta file:         {args.apply_delta_file}")
+      FH.patch(delta_file=args.apply_delta_file)
+      pass
+
+   else:
+      raise Exception("Unknown execution mode")
 
 exit(0)

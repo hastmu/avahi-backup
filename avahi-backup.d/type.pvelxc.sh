@@ -5,6 +5,7 @@
 #
 
 declare -A _PVELXC
+_PVELXC["cfg.min-chunk-size"]=$(( 8 * 1024 * 1024 )) # 8MB
 
 function type.pvelxc.init() {
 
@@ -117,6 +118,11 @@ function type.pvelxc.check.preflight() {
       _PVELXC["skip_counter"]=$(( ${_PVELXC["skip_counter"]:0} + 1 ))
       stat=1
       output "- STOP_HOURS[${t_hour}] - CURRENT[${hour}] - UNMATCH - skipping"
+      # refresh hashes
+      ls -alh "${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
+      filehasher.py --version
+      find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw" -print0 \
+      | xargs -0 -r -n 1 timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile
    fi
    error_count=$(( error_count + stat ))
    # result
