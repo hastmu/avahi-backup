@@ -16,9 +16,9 @@ group.add_argument("--force-refresh", action='store_true', help="refresh also av
 
 group = parser.add_argument_group('Verifying...')
 group.add_argument("--verify-against", help="hashed which should be verified for matching", type=str, default=False)
-group.add_argument("--delta_file", help="store deltas to this file for patching", type=str, default=False)
+group.add_argument("--delta-file", help="store deltas to this file for patching", type=str, default=False)
 group = parser.add_argument_group('Patching...')
-group.add_argument("--apply_delta_file", help="patches the inputfile with the content of the delta file", type=str, default=False)
+group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
 args = parser.parse_args()
 
 print (args)
