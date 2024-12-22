@@ -320,6 +320,7 @@ class FileHasher():
                   target_file.write(chk_data)
          
          print(f"- Done.")
+         self._refresh_inputfile_stats()
          
 
    def save_hash(self):
