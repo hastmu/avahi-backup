@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# copyright 2024 by gh-hastmu@gmx.de
+# homed at: https://github.com/hastmu/avahi-backup
+
 import atexit
 import time
 import pickle
