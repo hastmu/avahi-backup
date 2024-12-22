@@ -290,8 +290,11 @@ class FileHasher():
          if write_delta_file != False:
             source_file.close()
             delta_file.close()
-            with open(write_delta_file+".hash", 'wb') as handle:
-               pickle.dump(self.mismatched_idx, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            if mismatch > 0:
+               with open(write_delta_file+".hash", 'wb') as handle:
+                  pickle.dump(self.mismatched_idx, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+               os.remove(write_delta_file)
       else:
          raise Exception("can not read hash file")
 
@@ -367,6 +370,13 @@ else:
       # verify branch
       print(f"verifing against: {args.verify_against}")
       FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
+      if args.delta_file != False:
+         if len(self.mismatched_idx)>0:
+            # there is a delta exit = 0
+            exit(0)
+         else:
+            # there is no delta exit != 0
+            exit(1)
 
    elif args.apply_delta_file != False:
       print(f"- file to be patched: {args.inputfile}")
