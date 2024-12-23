@@ -349,7 +349,7 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-version="1.0.3"
+version="1.0.4"
 
 if args.version == True:
    print(f"{version}")
@@ -359,7 +359,7 @@ elif args.show_hashes != False:
       with open(args.show_hashes, 'rb') as handle:
          data = pickle.load(handle)
       import json
-      print(json.dump(data))
+      print(json.dumps(data))
    else:
       raise Exception("can not load hash file")
 
