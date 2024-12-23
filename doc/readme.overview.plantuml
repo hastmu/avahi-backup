@@ -70,7 +70,16 @@ backup -> client: check if source to be backuped is available
 backup -> client: check if there are sshfs mount inside the source tree if so exclude them
 
 else Backup
+
+backup -> client: rsync as defined with static bwlimit of 40MB/s
+
 else Summary
+
+note right of backup
+SUMMARY # S.PATH: was used.
+TBU
+end note
+
 end group
 
 else 
@@ -86,7 +95,30 @@ else
 
 group#LightYellow #LightBlue PVE-LXC
 else Pre-Flight Check
+
+backup -> backup: if there is a chain of ids split them into individual items with same properties
+
+group stop_hours
+
+backup -> backup: check if we are in the stop_hour (the time a shutdown is acceptable, e.g. 5am)
+
+else #LightGreen true
+
+backup -> client: check if lxc id is available
+backup -> client: check if lxc id is running, there for shutdown is triggered
+
+else #Orange false
+
+backup -> backup: spend 30s to update hash of last backups volumes. (so every run will complete that more and more)
+
+end group
+
+backup -> client: check if versions of filehasher local and remote are matching.
+
 else Backup
+
+backup -> client: check if lxc id was running, there for start is triggered
+
 else Summary
 end group
 
