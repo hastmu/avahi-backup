@@ -222,18 +222,15 @@ class FileHasher():
             self.hash_obj={}
          # prepare delta file
 
-         print(f"load hashes from: {hash_filename}")
          with open(hash_filename, 'rb') as handle:
             self.verify_data = pickle.load(handle)
             loaded_hashes=len(self.verify_data["hashes"])
-            print(f"- loaded {loaded_hashes} hashes to verify...")
+            print(f"loaded {loaded_hashes} hashes from: {hash_filename}")
 
-         #print(data)
          count=0
          match=0
          mismatch=0
          self.mismatched_idx=[]
-         func = getattr(self, self.hash_file_def)
 
          if write_delta_file != False:
             delta_file=open(write_delta_file, 'wb')
@@ -256,8 +253,12 @@ class FileHasher():
                read_speed.update_run(self.chunk_size)
                source_file.seek(self.chk*self.chunk_size)
                data_chunk=source_file.read(self.chunk_size)
-               func(data_chunk)
-               self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
+               # calc hash
+               data_hash=hashlib.sha256(data_chunk)
+               # convert to string
+               self.hash_obj[self.chk]=data_hash.hexdigest()
+               #
+               #self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
                input_hash=self.hash_obj[self.chk]
                self.save_hashes=True
 #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
@@ -288,15 +289,16 @@ class FileHasher():
 
                #print(f"!", end="")
                print(f"mismatch at {self.chk}")
-               #print(f"SRC[{input_hash}]")
-               #print(f"TRG[{compare_hash}]")
+               print(f"SRC[{input_hash}]")
+               print(f"TRG[{compare_hash}]")
          print(f"")
-         print(f"\33[2K\r",end='\r')
+         #print(f"\33[2K\r",end='\r')
          print(f"- verified matching {match}, mismatching {mismatch}.")
          if write_delta_file != False:
             source_file.close()
             delta_file.close()
             if mismatch > 0:
+               # TODO: store also chunk-size 
                with open(write_delta_file+".hash", 'wb') as handle:
                   pickle.dump(self.mismatched_idx, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
@@ -340,6 +342,7 @@ class FileHasher():
       if self.save_hashes == True:
          data={}
          data["hashes"]=self.hash_obj
+         data["chunk_size"]=self.chunk_size
          data["mtime"]=self.inputfile_stats.st_mtime
          print(f"write hashfile [{len(self.hash_obj)}]: {self.hashfile}...")
          
