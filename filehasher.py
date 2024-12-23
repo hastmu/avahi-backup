@@ -355,7 +355,7 @@ if args.version == True:
    print(f"{version}")
 elif args.show_hashes != False:
    if os.path.isfile(args.show_hashes):
-      print(f"load hashes from: {args.show_hashes}")
+      #print(f"load hashes from: {args.show_hashes}")
       with open(args.show_hashes, 'rb') as handle:
          data = pickle.load(handle)
       print(data)
