@@ -23,7 +23,13 @@ group.add_argument("--verify-against", help="hashed which should be verified for
 group.add_argument("--delta-file", help="store deltas to this file for patching", type=str, default=False)
 group = parser.add_argument_group('Patching...')
 group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
+
+group = parser.add_argument_group('Debugging...')
+group.add_argument("--show-hashes", help="lists stored hashes in hash file", type=str, default=False)
+
 args = parser.parse_args()
+
+
 
 # exit function
 def save_hash_file():
@@ -343,10 +349,19 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-version="1.0.2"
+version="1.0.3"
 
 if args.version == True:
    print(f"{version}")
+elif args.show_hashes != False:
+   if os.path.isfile(args.show_hashes):
+      print(f"load hashes from: {args.show_hashes}")
+      with open(args.show_hashes, 'rb') as handle:
+         data = pickle.load(handle)
+      print(data)
+   else:
+      raise Exception("can not load hash file")
+
 else:
    print (args)
 
