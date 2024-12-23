@@ -358,7 +358,8 @@ elif args.show_hashes != False:
       #print(f"load hashes from: {args.show_hashes}")
       with open(args.show_hashes, 'rb') as handle:
          data = pickle.load(handle)
-      print(data)
+      import json
+      print(json.dump(data))
    else:
       raise Exception("can not load hash file")
 
