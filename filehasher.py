@@ -6,6 +6,7 @@
 import atexit
 import time
 import pickle
+import math
 
 import argparse
 
@@ -131,6 +132,7 @@ class FileHasher():
       self.save_hashes=False
 
       # method
+      # TODO: conclude on method if needed
       self.method=hash_method
       self.hash_file_def=f"hash_file_"+self.method
       if hasattr(self, self.hash_file_def) and callable(func := getattr(self, self.hash_file_def)):
@@ -150,19 +152,26 @@ class FileHasher():
       if hashfile == False:
          self.hashfile=self.inputfile+".hash."+str(self.chunk_size)
 
+      # self.load_hashes = initial | not-loaded(outdated) | not-loaded(wrong chunk-size) | loaded based on state
+
       if os.path.isfile(self.hashfile):
-         print(f"load hashes from: {self.hashfile}")
          with open(self.hashfile, 'rb') as handle:
             data = pickle.load(handle)
 
-         #print(data)
-         # TODO: check method
          if data["mtime"] != self.inputfile_stats.st_mtime:
-            print(f"file changed - do not load old hashes...")
+            self.loaded_hashes="not-loaded(outdated)"
+            self.save_hashes=True
+         elif data["chunk_size"] != self.chunk_size:
+            # wrong chunk_size
+            self.loaded_hashes="not-loaded(wrong chunk-size)"
             self.save_hashes=True
          else:
+            self.loaded_hashes="loaded"
             self.hash_obj=data["hashes"]
             #print(self.hash_obj)
+      else:
+         self.loaded_hashes="initial"
+
 
    def _refresh_inputfile_stats(self):
       self.inputfile_stats = os.stat(self.inputfile)
@@ -190,11 +199,11 @@ class FileHasher():
          self.hash_obj={}
 
       self.chk=int(0)
-      self.max_chk=int(self.inputfile_stats.st_size/self.chunk_size)
+      self.max_chk=math.ceil(self.inputfile_stats.st_size/self.chunk_size)
       with open(self.inputfile,"rb") as f:
          if incremental == True:
             self.chk=len(self.hash_obj)
-            print(f"resuming at chunk {self.chk}")
+            self.loaded_hashes=self.loaded_hashes+" - inc["+str(self.chk)+"-"+str(self.max_chk)+"]"
             f.seek(self.chk*self.chunk_size)
          else:
             f.seek(0)
@@ -209,10 +218,8 @@ class FileHasher():
             # convert to string
             self.hash_obj[self.chk]=data.hexdigest()
             self.chk=self.chk+1
-      print("")
-
-   def compare_hash(self):
-      pass
+      print(f"\33[2K\r",end='\r')
+            
 
    def verify_against(self,*, hash_filename, write_delta_file=False):
 
@@ -229,7 +236,9 @@ class FileHasher():
          with open(hash_filename, 'rb') as handle:
             self.verify_data = pickle.load(handle)
             loaded_hashes=len(self.verify_data["hashes"])
-            print(f"loaded {loaded_hashes} hashes from: {hash_filename}")
+            #loaded_chunk_size=loaded_hashes["chunk_size"]
+            # TODO: check chunk-size
+#            self.loaded_hashes=self.loaded_hashes+f"- verify [{loaded_hashes}:{hash_filename}]"
 
          count=0
          match=0
@@ -252,6 +261,7 @@ class FileHasher():
                   read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
                if source_file == False:
                   source_file=open(self.inputfile,"rb")
+                  source_file.seek(0)
                # we need to hash the file again.
                # TODO: make that method agnostic.
                read_speed.update_run(self.chunk_size)
@@ -282,6 +292,7 @@ class FileHasher():
                if write_delta_file != False:
                   if source_file == False:
                      source_file=open(self.inputfile,"rb")
+                     source_file.seek(0)
                   self.mismatched_idx.append(self.chk)
                   # seek source file
                   if data_chunk == False:
@@ -295,9 +306,9 @@ class FileHasher():
                print(f"mismatch at {self.chk}")
                print(f"SRC[{input_hash}]")
                print(f"TRG[{compare_hash}]")
-         print(f"")
          #print(f"\33[2K\r",end='\r')
-         print(f"- verified matching {match}, mismatching {mismatch}.")
+         print(f"verify [#{loaded_hashes}:{hash_filename}] loaded - M[#{match}:!#{mismatch}]")
+
          if write_delta_file != False:
             if source_file != False:
                source_file.close()
@@ -340,7 +351,15 @@ class FileHasher():
          
          print(f"- Done.")
          self._refresh_inputfile_stats()
-         
+
+   def feedback(self):
+
+      # save hashes ?
+      if self.save_hashes == True:
+         print(f"{self.loaded_hashes} - updated - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
+      else:
+         print(f"{self.loaded_hashes} - unchanged - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
+
 
    def save_hash(self):
 
@@ -349,13 +368,12 @@ class FileHasher():
          data["hashes"]=self.hash_obj
          data["chunk_size"]=self.chunk_size
          data["mtime"]=self.inputfile_stats.st_mtime
-         print(f"write hashfile [{len(self.hash_obj)}]: {self.hashfile}...")
          
          # save
          with open(self.hashfile, 'wb') as handle:
             pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-      else:
-         print(f"! no changed hashes detect - no update on hashfile.")
+      
+      self.feedback()
 
 version="1.0.5"
 
@@ -372,7 +390,7 @@ elif args.show_hashes != False:
       raise Exception("can not load hash file")
 
 else:
-   print (args)
+   # print (args)
 
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size)
    atexit.register(save_hash_file)
@@ -392,7 +410,6 @@ else:
 
    elif args.verify_against != False:
       # verify branch
-      print(f"verifing against: {args.verify_against}")
       FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
       if args.delta_file != False:
          if len(FH.mismatched_idx)>0:
