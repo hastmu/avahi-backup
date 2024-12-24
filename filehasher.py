@@ -190,20 +190,24 @@ class FileHasher():
          self.hash_obj={}
 
       self.chk=int(0)
-      func = getattr(self, self.hash_file_def)
       self.max_chk=int(self.inputfile_stats.st_size/self.chunk_size)
       with open(self.inputfile,"rb") as f:
          if incremental == True:
             self.chk=len(self.hash_obj)
             print(f"resuming at chunk {self.chk}")
             f.seek(self.chk*self.chunk_size)
+         else:
+            f.seek(0)
 
          read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
 
          for piece in self._read_file_in_chunks(f,self.chunk_size):
             self.save_hashes=True
             read_speed.update_run(self.chunk_size)
-            func(piece)
+            # hash
+            data=hashlib.sha256(piece)
+            # convert to string
+            self.hash_obj[self.chk]=data.hexdigest()
             self.chk=self.chk+1
       print("")
 
@@ -352,7 +356,7 @@ class FileHasher():
       else:
          print(f"! no changed hashes detect - no update on hashfile.")
 
-version="1.0.4"
+version="1.0.5"
 
 if args.version == True:
    print(f"{version}")
