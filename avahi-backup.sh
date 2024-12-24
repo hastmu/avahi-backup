@@ -7,6 +7,8 @@
 
 export LC_ALL="C"
 
+export PATH=${PATH}:/usr/local/bin:/usr/local/sbin:
+
 declare -A RUNTIME
 RUNTIME["_me"]="$(cd "$(dirname "$0")" || exit 0 ; pwd)/$(basename "$0")"
 while [ -h "${RUNTIME["_me"]}" ]
@@ -148,12 +150,19 @@ function rsync.file() {
    # $1 ... source
    # $2 ... target
    # $3 ... logfile
-   rsync -e "ssh -i .ssh/backup" \
+   # $4+... rsync args
+   local src="$1"
+   local trg="$2"
+   local log="$3"
+   shift
+   shift
+   shift
+   rsync -e "ssh -i .ssh/backup" "${1+"$@"}" \
       -avc --bwlimit=40000 --delete --exclude="lost+found" \
       --stats --progress --inplace --partial --block-size=$(( 128 * 1024 )) \
-      "${1}" \
-      "${2}" \
-      | tee "${3}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
+      "${src}" \
+      "${trg}" \
+      | tee "${log}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
       | stdbuf -i0 -oL -eL grep "%" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
 }
 
@@ -480,6 +489,8 @@ backup) {
    for b_host in ${!AVAHI_IDX[@]}
    do
       declare -A RUNTIME_NODE=()
+
+      # [ "${b_host}" != "pve-wyse-001.local" ] && continue
 
       RUNTIME["output.prefix"]=""
       # update RUNTIME

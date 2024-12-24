@@ -49,7 +49,7 @@ end note
 == Client start ==
 
 client -> local.storage: scans for /home/*/.backup if found registers
-client -> local.storage: reads /etc/backup.d/*.conf and registers
+client -> local.storage: reads /etc/avahi-backup.d/*.conf and registers
 client -> avahi.announcement: Default register /etc /root + found ones
 
 == Backup Cycle ==
@@ -86,8 +86,50 @@ else
 
 group#LightYellow #LightBlue ZFS
 else Pre-Flight Check
+
+backup -> client: check if zfs is available
+backup -> client: check if zfs volume is available
+backup -> client: check if zfs source volume is encrypted or not
+
+backup -> backup: check if there is a resume-token for the zfs target volume?
+backup -> backup: check if this is a full or incremental update?
+
 else Backup
+
+group States
+
+else #LightYellow zfs-resume
+
+backup -> client: start 60s zfs send with resume-token (so every run this gets more complete)
+
+else #LightYellow zfs-full-unenc
+
+backup -> client: start 60s zfs send for a full unencrypted setup (ends up in resume-token)
+
+else #LightYellow zfs-full-enc
+
+backup -> client: start 60s zfs send for a full encrypted setup (ends up in resume-token)
+
+else #LightYellow zfs-inc-unenc
+
+backup -> client: start 60s zfs send for a incremental unencrypted setup (ends up in resume-token)
+
+else #LightYellow zfs-inc-enc
+
+backup -> client: start 60s zfs send for a incremental encrypted setup (ends up in resume-token)
+
+end group
+
 else Summary
+
+note right of backup
+SUMMARY # S.PVELXC: skipped[6] (stop_hour)
+SUMMARY # S.PVELXC: hash up-to-date[10] updating[0]
+TBU
+end note
+
+
+
 end group
 
 

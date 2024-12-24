@@ -6,6 +6,8 @@
 
 declare -A _PVELXC
 _PVELXC["cfg.min-chunk-size"]=$(( 8 * 1024 * 1024 )) # 8MB
+_PVELXC["summary.hash.up-to-date"]=0
+_PVELXC["summary.hash.updating"]=0
 
 function type.pvelxc.init() {
 
@@ -72,6 +74,7 @@ function type.pvelxc.summary() {
    # what you like to add to the summary after all runs.
    declare -p _PVELXC >&2 
    SUMMARY[${#SUMMARY[@]}]="S.PVELXC: skipped[${_PVELXC["skip_counter"]}] (stop_hour)"
+   SUMMARY[${#SUMMARY[@]}]="S.PVELXC: hash up-to-date[${_PVELXC["summary.hash.up-to-date"]}] updating[${_PVELXC["summary.hash.updating"]}]"
 
 }
 
@@ -113,6 +116,25 @@ function type.pvelxc.check.preflight() {
       fi
       error_count=$(( error_count + stat ))
 
+      # check filehasher version
+      local local_version
+      if [ -z "${RUNTIME_NODE["filehasher.remote_version.stat"]}" ]
+      then
+         local_version="$(filehasher.py --version)"
+         RUNTIME_NODE["filehasher.remote_version"]="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py --version)"
+
+         if [ "${local_version}" == "${RUNTIME_NODE["filehasher.remote_version"]}" ]
+         then
+            output "- filehasher check local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
+            RUNTIME_NODE["filehasher.remote_version.stat"]=0
+         else
+            SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} filehasher version mismatch local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
+            output "! filehasher check local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
+            RUNTIME_NODE["filehasher.remote_version.stat"]=1
+         fi
+      fi
+      error_count=$(( error_count + ${RUNTIME_NODE["filehasher.remote_version.stat"]} ))
+
    else
       # out of stop hours
       _PVELXC["skip_counter"]=$(( ${_PVELXC["skip_counter"]:0} + 1 ))
@@ -121,8 +143,21 @@ function type.pvelxc.check.preflight() {
       # refresh hashes
       ls -alh "${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
       filehasher.py --version
-      find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw" -print0 \
-      | xargs -0 -r -n 1 timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile
+      # TODO: make this check the exit status of hasher if update of hashes took place or not
+      #       in order to know if the full file was hashed.
+      # TODO: adapt timeout ? maybe a good way, on the other hand low frequency backups would have no need.
+      local item=""
+      for item in $(find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw")
+      do
+         timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile "${item}"
+         if [ $? -eq 0 ]
+         then
+            _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
+         elif [ $? -ne 0 ]
+         then
+            _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
+         fi
+      done
    fi
    error_count=$(( error_count + stat ))
    # result
@@ -156,6 +191,7 @@ function type.pvelxc.perform.backup() {
    local storage_item=""
    local storage_path=""
    output "  - backup storage items..."
+   # TODO: pct df always changes the volume.
    for storage_item in $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct df "${RUNTIME_ITEM["pvelxc"]}" | grep -E "(^rootfs|^mp)" | awk '{ print $2 }')
    do
       if [ -z "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" ]
@@ -164,6 +200,7 @@ function type.pvelxc.perform.backup() {
       else
          output "    - storage item: ${storage_item} -> ${storage_item%%:*} type[${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}]"
          storage_path="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm path "${storage_item}")"
+         ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" ls -lah "${storage_path}"
          output "      path: ${storage_path}"
          # copy
          trg="${storage_item//\//_}"
@@ -172,7 +209,64 @@ function type.pvelxc.perform.backup() {
             output "      backup_name: ${trg} ... rsyncing..."
             output "      log: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" 
             s_time=$(date +%s)
-            rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"
+            if [ 1 -eq 0 ]
+            then
+               # rsync way
+               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"
+            fi
+            if [ 1 -eq 1 ]               
+            then
+               # filehasher way
+               # check local hashs
+               # TODO: change back to 10s
+               output "- md5sum before local check."
+               md5sum "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
+               timeout 10m filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
+                              --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" >> /dev/null
+               stat=$?
+
+               if [ ${stat} -eq 0 ]
+               then
+                  output "- local hashes up-to-date"
+               elif [ ${stat} -eq 1 ]
+               then
+                  output "- local hashes got updated."
+               else
+                  output "! local hashes are not up-to-date."
+                  SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} - ${RUNTIME_ITEM["pvelxc"]}:${trg} - not up-to-date file hashes - skipped"
+                  return 1
+               fi
+
+               # copy local hash to remote and trigger compare
+               T_DIR=$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" mktemp -d)
+               local remote_hash_file
+               remote_hash_file="${RUNTIME["BACKUP_HOSTNAME"]}:${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}"
+               output "- local:  ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
+               output "- remote: ${remote_hash_file}"
+
+               scp "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}" "${remote_hash_file}"
+               output "- create delta file..."
+
+               ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
+                  "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
+                  --inputfile "${storage_path}" \
+                  --verify-against "${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}" --delta-file "${storage_path}.delta"
+               stat=$?
+               # TODO: detect if there is no delta file.
+               output "- stat: ${stat}"
+
+               # copy back delta files
+               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files  
+               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files
+
+               # patch local file
+               filehasher.py \
+                  "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
+                  --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" \
+                  --apply-delta-file "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta"
+
+               ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -Rf "${T_DIR}"
+            fi
             e_time=$(date +%s)
             output "      took: $(( e_time - s_time )) sec. / $(( (e_time - s_time)/60 )) min."
          fi
