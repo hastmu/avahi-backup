@@ -299,7 +299,8 @@ class FileHasher():
          #print(f"\33[2K\r",end='\r')
          print(f"- verified matching {match}, mismatching {mismatch}.")
          if write_delta_file != False:
-            source_file.close()
+            if source_file != False:
+               source_file.close()
             delta_file.close()
             if mismatch > 0:
                # TODO: store also chunk-size 
