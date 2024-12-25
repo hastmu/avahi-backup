@@ -124,6 +124,8 @@ class speed():
 
 class FileHasher():
 
+   chunk_file_version = "v1.0.0"
+
    def __init__(self,* , inputfile="", hashfile=False, chunk_size=8192, hash_method="flat"):
 
       # defaults
@@ -157,8 +159,16 @@ class FileHasher():
       if os.path.isfile(self.hashfile):
          with open(self.hashfile, 'rb') as handle:
             data = pickle.load(handle)
+         
+         # check version
+         hashfile_format_version=data.get("version",False)
 
-         if data["mtime"] != self.inputfile_stats.st_mtime:
+         # TODO: check format version
+         if  hashfile_format_version == False or hashfile_format_version != self.chunk_file_version:
+            # version does not match
+            self.loaded_hashes="not-loaded(version)"
+            self.save_hashes=True
+         elif data["mtime"] != self.inputfile_stats.st_mtime:
             self.loaded_hashes="not-loaded(outdated)"
             self.save_hashes=True
          elif data["chunk_size"] != self.chunk_size:
@@ -360,11 +370,11 @@ class FileHasher():
       else:
          print(f"{self.loaded_hashes} - unchanged - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
 
-
    def save_hash(self):
 
       if self.save_hashes == True:
          data={}
+         data["version"]=self.chunk_file_version
          data["hashes"]=self.hash_obj
          data["chunk_size"]=self.chunk_size
          data["mtime"]=self.inputfile_stats.st_mtime
