@@ -95,15 +95,15 @@ function type.path.perform.backup() {
    output "- RSYNC_ARGS: ${RUNTIME["RSYNC_ARGS"]}"
       
    # check if already backuped latley
-   output "- rsyncing..."
-   rsync -e "ssh -i .ssh/backup" \
-      ${RUNTIME["RSYNC_ARGS"]} \
+   output "- rsyncing...up to 1GB files..."
+   timeout 1m rsync -e "ssh -i .ssh/backup" \
+      ${RUNTIME["RSYNC_ARGS"]} --max-size=$(( 1 * 1024 * 1024 * 1024)) -i \
       -av --bwlimit=40000 --delete --exclude="lost+found" \
       --info=progress2 --stats --inplace --partial \
       "${src}/." \
       "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." \
       | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
-      | stdbuf -i0 -oL -eL grep ", to-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
+      | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
 
    if [ "${PIPESTATUS[0]}" -ne 0 ]
    then
@@ -113,10 +113,47 @@ function type.path.perform.backup() {
       echo ""
       output "! RSYNC Error - schedule again - fix the issue. backup runs at any cycle again."
       stat=1
-      SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} had issues"
+      SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} <=1GB had issues"
    else
       echo ""
    fi
+
+   # find files > 1GB to build infiles
+   output "- file listing >=1G files..."
+   large_file_tmp="$(mktemp)"
+   ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" find "${src#*:}/." -size +$(( 1 * 1024 * 1024 * 1024 - 1 ))c \
+   >> "${large_file_tmp}"
+   output "- found $(wc -l < "${large_file_tmp}") large files"
+
+   output "- rsyncing...>1GB files..."
+   timeout 10m rsync -e "ssh -i .ssh/backup" \
+      --files-from=${large_file_tmp} \
+      ${RUNTIME["RSYNC_ARGS"]} --min-size=$(( 1 * 1024 * 1024 * 1024)) -i \
+      -av --bwlimit=40000 --delete --exclude="lost+found" \
+      --info=progress2 --stats --inplace --partial \
+      "${src}/." \
+      "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." \
+      | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
+      | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
+
+   eval local -A pstat=$(declare -p PIPESTATUS | cut -d= -f2-)
+   rm -fv "${large_file_tmp}"
+   declare -p pstat
+
+   if [ "${PIPESTATUS[0]}" -ne 0 ]
+   then
+      touch $0.log
+      touch "${RUNTIME_ITEM["logname.base"]}.error"
+      echo "RSYNC-ERROR: ${src} - ${RUNTIME_ITEM["logfile"]}" >> $0.log
+      echo ""
+      output "! RSYNC Error - schedule again - fix the issue. backup runs at any cycle again."
+      stat=1
+      declare -p PIPESTATUS
+      SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} >= 1GB had issues"
+   else
+      echo ""
+   fi
+
 
    return ${stat}
 }
