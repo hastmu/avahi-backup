@@ -155,6 +155,7 @@ function type.pvelxc.check.preflight() {
             _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
          elif [ $? -ne 0 ]
          then
+            SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} ${RUNTIME_ITEM["pvelxc"]} local hash updating ${item}"
             _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
          fi
       done
@@ -206,33 +207,32 @@ function type.pvelxc.perform.backup() {
          trg="${storage_item//\//_}"
          if [ "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" == "dir" ]
          then
-            output "      backup_name: ${trg} ... rsyncing..."
             output "      log: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" 
             s_time=$(date +%s)
             if [ 1 -eq 0 ]
             then
                # rsync way
+               output "      backup_name: ${trg} ... rsyncing..."
                rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"
             fi
             if [ 1 -eq 1 ]               
             then
+               output "      backup_name: ${trg} ... filehasher..."
                # filehasher way
                # check local hashs
                # TODO: change back to 10s
-               output "- md5sum before local check."
-               md5sum "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
                timeout 10m filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
                               --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" >> /dev/null
                stat=$?
 
                if [ ${stat} -eq 0 ]
                then
-                  output "- local hashes up-to-date"
+                  output "      - local hashes up-to-date"
                elif [ ${stat} -eq 1 ]
                then
-                  output "- local hashes got updated."
+                  output "      - local hashes got updated."
                else
-                  output "! local hashes are not up-to-date."
+                  output "      ! local hashes are not up-to-date."
                   SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} - ${RUNTIME_ITEM["pvelxc"]}:${trg} - not up-to-date file hashes - skipped"
                   return 1
                fi
@@ -241,11 +241,11 @@ function type.pvelxc.perform.backup() {
                T_DIR=$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" mktemp -d)
                local remote_hash_file
                remote_hash_file="${RUNTIME["BACKUP_HOSTNAME"]}:${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}"
-               output "- local:  ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
-               output "- remote: ${remote_hash_file}"
+               output "      - local:  ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
+               output "      - remote: ${remote_hash_file}"
 
-               scp "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}" "${remote_hash_file}"
-               output "- create delta file..."
+               scp.cmd "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}" "${remote_hash_file}"
+               output "      - create delta file..."
 
                ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
                   "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
@@ -253,18 +253,24 @@ function type.pvelxc.perform.backup() {
                   --verify-against "${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}" --delta-file "${storage_path}.delta"
                stat=$?
                # TODO: detect if there is no delta file.
-               output "- stat: ${stat}"
+               output "        - stat: ${stat}"
 
-               # copy back delta files
-               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files  
-               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files
+               if [ ${stat} -eq 0 ]
+               then
+                  # delta
+                  output "      - delta update..."
+                  # copy back delta files
+                  rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files  
+                  rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta.hash" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" --remove-source-files
 
-               # patch local file
-               filehasher.py \
-                  "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
-                  --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" \
-                  --apply-delta-file "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta"
-
+                  # patch local file
+                  filehasher.py \
+                     "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
+                     --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" \
+                     --apply-delta-file "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.delta"
+               else
+                  output "      - no delta - no patching."
+               fi
                ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -Rf "${T_DIR}"
             fi
             e_time=$(date +%s)
@@ -275,7 +281,8 @@ function type.pvelxc.perform.backup() {
    done
    # cleanup old items.
    output "TODO - cleanup old items"
-   find "${BACKUP_TARGET_DIR}/" ! -newer "${BACKUP_TARGET_DIR}/lxc.config"
+   find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/" ! -newer "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/lxc.config"
+   output "TODO - cleanup old items"
 
 
    # restart if we shutdown the lxc
