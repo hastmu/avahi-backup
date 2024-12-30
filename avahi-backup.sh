@@ -104,6 +104,11 @@ function ssh.cmd() {
    ssh -i .ssh/backup ${1+"$@"}
 }
 
+function scp.cmd() {
+   scp -i .ssh/backup ${1+"$@"}
+}
+
+
 function ssh.check() {
    # $1 ... ssh target
    if ssh.cmd -o StrictHostKeyChecking=accept-new "${1}" true
