@@ -18,6 +18,7 @@ group.add_argument("--inputfile", help="file which should be hashed.", type=str,
 group.add_argument("--min-chunk-size", help="smallest chunk for hashing.", type=int, default=8192)
 group.add_argument("--build-only", help="build only - no compare", type=bool, default=True)
 group.add_argument("--force-refresh", action='store_true', help="refresh also available hashes in build-only mode")
+group.add_argument("--hashfile", help="define which hashfile is used",default=False)
 
 group = parser.add_argument_group('Verifying...')
 group.add_argument("--verify-against", help="hashed which should be verified for matching", type=str, default=False)
@@ -163,7 +164,6 @@ class FileHasher():
          # check version
          hashfile_format_version=data.get("version",False)
 
-         # TODO: check format version
          if  hashfile_format_version == False or hashfile_format_version != self.chunk_file_version:
             # version does not match
             self.loaded_hashes="not-loaded(version)"
@@ -385,7 +385,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.5"
+version="1.0.6"
 
 if args.version == True:
    print(f"{version}")
@@ -402,7 +402,7 @@ elif args.show_hashes != False:
 else:
    # print (args)
 
-   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size)
+   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile)
    atexit.register(save_hash_file)
 
    if args.verify_against == False and args.apply_delta_file == False:
