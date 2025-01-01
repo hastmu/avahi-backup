@@ -154,6 +154,8 @@ class FileHasher():
 
       if hashfile == False:
          self.hashfile=self.inputfile+".hash."+str(self.chunk_size)
+      else:
+         self.hashfile=hashfile
 
       # self.load_hashes = initial | not-loaded(outdated) | not-loaded(wrong chunk-size) | loaded based on state
 
