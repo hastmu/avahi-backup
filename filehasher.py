@@ -168,7 +168,8 @@ class FileHasher():
          self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+"/"+self.hashfile_hashedname
          # migrate old ones
          if os.path.isfile(self.inputfile+".hash."+str(self.chunk_size)):
-            os.rename(self.inputfile+".hash."+str(self.chunk_size),self.hashfile)
+            import shutil
+            shutil.move(self.inputfile+".hash."+str(self.chunk_size),self.hashfile)
       else:
          self.hashfile=hashfile
 
