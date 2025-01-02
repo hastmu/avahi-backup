@@ -163,9 +163,9 @@ class FileHasher():
       if hashfile == False:
          # new
          self.hashfile_abspath=os.path.abspath(self.inputfile)
-         self.hashfile_hashedname=hashlib.sha512(self.hashfile_abspath).hexdigest()
+         self.hashfile_hashedname=hashlib.sha512(self.hashfile_abspath.encode()).hexdigest()
          os.makedirs(_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4], exist_ok=True)
-         self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+self.hashfile_hashedname
+         self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+"/"+self.hashfile_hashedname
          # migrate old ones
          if os.path.isfile(self.inputfile+".hash."+str(self.chunk_size)):
             os.rename(self.inputfile+".hash."+str(self.chunk_size),self.hashfile)
@@ -417,7 +417,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.7"
+version="1.0.8"
 
 if args.version == True:
    print(f"{version}")
