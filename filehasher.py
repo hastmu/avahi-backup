@@ -3,6 +3,13 @@
 # copyright 2024 by gh-hastmu@gmx.de
 # homed at: https://github.com/hastmu/avahi-backup
 
+# defaults
+from pathlib import Path
+
+_CFG={
+   "default_hash_basedir": str(Path.home())+"/.cache/avahi-backup/hashes"
+}
+
 import atexit
 import time
 import pickle
@@ -154,7 +161,14 @@ class FileHasher():
       self.chunk_size=chunk_size
 
       if hashfile == False:
-         self.hashfile=self.inputfile+".hash."+str(self.chunk_size)
+         # new
+         self.hashfile_abspath=os.path.abspath(self.inputfile)
+         self.hashfile_hashedname=hashlib.sha512(self.hashfile_abspath).hexdigest()
+         os.makedirs(_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4], exist_ok=True)
+         self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+self.hashfile_hashedname
+         # migrate old ones
+         if os.path.isfile(self.inputfile+".hash."+str(self.chunk_size)):
+            os.rename(self.inputfile+".hash."+str(self.chunk_size),self.hashfile)
       else:
          self.hashfile=hashfile
 
@@ -166,7 +180,9 @@ class FileHasher():
          
          # check version
          hashfile_format_version=data.get("version",False)
+         hashfile_inputfile=data.get("inputfile",False)
 
+         # version check
          if  hashfile_format_version == False or hashfile_format_version != self.chunk_file_version:
             # version does not match
             self.loaded_hashes="not-loaded(version)"
@@ -177,6 +193,9 @@ class FileHasher():
          elif data["chunk_size"] != self.chunk_size:
             # wrong chunk_size
             self.loaded_hashes="not-loaded(wrong chunk-size)"
+            self.save_hashes=True
+         elif hashfile_inputfile != False and hashfile_inputfile != os.path.abspath(self.inputfile):
+            self.loaded_hashes="not-loaded(wrong-inputfile)"
             self.save_hashes=True
          else:
             self.loaded_hashes="loaded"
@@ -386,6 +405,7 @@ class FileHasher():
 
       if self.save_hashes == True:
          data={}
+         data["inputfile"]=os.path.abspath(self.inputfile)
          data["version"]=self.chunk_file_version
          data["hashes"]=self.hash_obj
          data["chunk_size"]=self.chunk_size
@@ -397,7 +417,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.6"
+version="1.0.7"
 
 if args.version == True:
    print(f"{version}")
