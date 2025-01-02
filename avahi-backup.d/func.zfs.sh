@@ -10,7 +10,7 @@ function zfs.snapshot() {
    # $2 ... snapshot name or default
 
 
-   if [ "$(find $0 -printf "%F\n")" = "zfs" ]
+   if [ "$(stat -f -c %T "${RUNTIME["BACKUP_ROOT"]}/.")" = "zfs" ]
    then
       local subvol=""
       local snapshot=""
@@ -28,6 +28,9 @@ function zfs.snapshot() {
       fi
       output "- global zfs snapshot: ${snapshot} @ ${subvol}"
       zfs snapshot -r ${subvol}@${snapshot}
+   else
+      output "- NO ZFS - NO SNAPSHOT."
+      SUMMARY[${#SUMMARY[@]}]="A.ZFS: no ZFS - no snapshot - $1@$2"
    fi
 
 }
