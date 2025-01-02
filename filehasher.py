@@ -23,6 +23,7 @@ group.add_argument("--hashfile", help="define which hashfile is used",default=Fa
 group = parser.add_argument_group('Verifying...')
 group.add_argument("--verify-against", help="hashed which should be verified for matching", type=str, default=False)
 group.add_argument("--delta-file", help="store deltas to this file for patching", type=str, default=False)
+group.add_argument("--chunk-limit", help="limit written deltas per run", type=int, default=False)
 group = parser.add_argument_group('Patching...')
 group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
 
@@ -233,7 +234,7 @@ class FileHasher():
       print(f"\33[2K\r",end='\r')
             
 
-   def verify_against(self,*, hash_filename, write_delta_file=False):
+   def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False):
 
       read_speed=False
       source_file=False
@@ -263,61 +264,70 @@ class FileHasher():
 
          inputfile_handle=False
          for self.chk in range(0,loaded_hashes):
-            input_hash=self.hash_obj.get(self.chk,False)
-            compare_hash=self.verify_data["hashes"].get(self.chk,False)
-            data_chunk=False
 
-            # refresh chk if needed
-            if input_hash == False:
-               if read_speed == False:
-                  read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
-               if source_file == False:
-                  source_file=open(self.inputfile,"rb")
-                  source_file.seek(0)
-               # we need to hash the file again.
-               # TODO: make that method agnostic.
-               read_speed.update_run(self.chunk_size)
-               source_file.seek(self.chk*self.chunk_size)
-               data_chunk=source_file.read(self.chunk_size)
-               # calc hash
-               data_hash=hashlib.sha256(data_chunk)
-               # convert to string
-               self.hash_obj[self.chk]=data_hash.hexdigest()
-               #
-               #self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
-               input_hash=self.hash_obj[self.chk]
-               self.save_hashes=True
-#               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
-
-            if compare_hash == False:
-               raise Exception("compare hash not available")
-
-            # compare
-            if input_hash == compare_hash:
-               match=match+1
-               #print(f"M", end="")
-               #print(f"match at {self.chk}")
-               #print(f"SRC[{input_hash}]")
-               #print(f"TRG[{compare_hash}]")
+            if chunk_limit != False and mismatch >= chunk_limit:
+               # break if we reached chunk_limit
+               break
             else:
-               mismatch=mismatch+1
-               if write_delta_file != False:
+
+               # get hashes and compare
+
+               input_hash=self.hash_obj.get(self.chk,False)
+               compare_hash=self.verify_data["hashes"].get(self.chk,False)
+               data_chunk=False
+
+               # refresh chk if needed
+               if input_hash == False:
+                  if read_speed == False:
+                     read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
                   if source_file == False:
                      source_file=open(self.inputfile,"rb")
                      source_file.seek(0)
-                  self.mismatched_idx.append(self.chk)
-                  # seek source file
-                  if data_chunk == False:
-                     #print(f"R", end="")
-                     print(f"- refresh read chk {self.chk}...")
-                     source_file.seek(self.chk*self.chunk_size)
-                     data_chunk=source_file.read(self.chunk_size)
-                  delta_file.write(data_chunk)
+                  # we need to hash the file again.
+                  # TODO: make that method agnostic.
+                  read_speed.update_run(self.chunk_size)
+                  source_file.seek(self.chk*self.chunk_size)
+                  data_chunk=source_file.read(self.chunk_size)
+                  # calc hash
+                  data_hash=hashlib.sha256(data_chunk)
+                  # convert to string
+                  self.hash_obj[self.chk]=data_hash.hexdigest()
+                  #
+                  #self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
+                  input_hash=self.hash_obj[self.chk]
+                  self.save_hashes=True
+   #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
 
-               #print(f"!", end="")
-               print(f"mismatch at {self.chk}")
-               print(f"SRC[{input_hash}]")
-               print(f"TRG[{compare_hash}]")
+               if compare_hash == False:
+                  raise Exception("compare hash not available")
+
+               # compare
+               if input_hash == compare_hash:
+                  match=match+1
+                  #print(f"M", end="")
+                  #print(f"match at {self.chk}")
+                  #print(f"SRC[{input_hash}]")
+                  #print(f"TRG[{compare_hash}]")
+               else:
+                  mismatch=mismatch+1
+                  if write_delta_file != False:
+                     if source_file == False:
+                        source_file=open(self.inputfile,"rb")
+                        source_file.seek(0)
+                     self.mismatched_idx.append(self.chk)
+                     # seek source file
+                     if data_chunk == False:
+                        #print(f"R", end="")
+                        print(f"- refresh read chk {self.chk}...")
+                        source_file.seek(self.chk*self.chunk_size)
+                        data_chunk=source_file.read(self.chunk_size)
+                     delta_file.write(data_chunk)
+
+                  #print(f"!", end="")
+                  print(f"mismatch at {self.chk}")
+                  print(f"SRC[{input_hash}]")
+                  print(f"TRG[{compare_hash}]")
+
          #print(f"\33[2K\r",end='\r')
          print(f"verify [#{loaded_hashes}:{hash_filename}] loaded - M[#{match}:!#{mismatch}]")
 
@@ -422,7 +432,7 @@ else:
 
    elif args.verify_against != False:
       # verify branch
-      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file)
+      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file,chunk_limit=args.chunk_limit)
       if args.delta_file != False:
          if len(FH.mismatched_idx)>0:
             # there is a delta exit = 0
