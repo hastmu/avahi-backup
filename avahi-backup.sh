@@ -66,6 +66,7 @@ function fn_exists() { declare -F "$1" > /dev/null; }
 
 # source functions
 source "${RUNTIME["INCLUDE_DIR"]}/func.zfs.sh"
+source "${RUNTIME["INCLUDE_DIR"]}/func.hashing.sh"
 
 function check.log() {
    # $1 ... logfile_basename
@@ -486,6 +487,8 @@ backup) {
 
    # create log dir if needed
    [ ! -x "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/logs" ] && mkdir "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/logs"
+   # create hash dir if needed
+   [ ! -x "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes" ] && mkdir "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes"
 
    declare -a SUMMARY
    SUMMARY[${#SUMMARY[@]}]="A.START:$(date)"
