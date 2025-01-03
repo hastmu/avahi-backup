@@ -318,11 +318,8 @@ class FileHasher():
                   self.save_hashes=True
    #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
 
-               if compare_hash == False:
-                  raise Exception("compare hash not available")
-
                # compare
-               if input_hash == compare_hash:
+               if input_hash == compare_hash and input_hash != False:
                   match=match+1
                   #print(f"M", end="")
                   #print(f"match at {self.chk}")
