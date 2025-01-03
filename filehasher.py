@@ -19,6 +19,7 @@ import argparse
 
 parser = argparse.ArgumentParser("filehasher")
 parser.add_argument("--version", action='store_true', help="show version and exit")
+parser.add_argument("--debug", action='store_true', help="enable debug messages")
 
 group = parser.add_argument_group('Hashing...')
 group.add_argument("--inputfile", help="file which should be hashed.", type=str, default=False)
@@ -39,12 +40,9 @@ group.add_argument("--show-hashes", help="lists stored hashes in hash file", typ
 
 args = parser.parse_args()
 
-
-
 # exit function
 def save_hash_file():
    FH.save_hash()
-
 
 import signal
 import sys
@@ -133,14 +131,15 @@ class speed():
 
 class FileHasher():
 
-   chunk_file_version = "v1.0.0"
+   chunk_file_version = "v1.0.2"
 
-   def __init__(self,* , inputfile="", hashfile=False, chunk_size=8192, hash_method="flat"):
+   def __init__(self,* , inputfile=False, hashfile=False, chunk_size=8192, hash_method="flat", debug=False):
 
       # defaults
       self.hash_obj={}
       self.mtime=0
       self.save_hashes=False
+      self._debug=debug
 
       # method
       # TODO: conclude on method if needed
@@ -152,19 +151,24 @@ class FileHasher():
          raise Exception("Unknown hash function")    
 
       # get inputfile, stats and check if exists.
-      self.inputfile=inputfile
-      if os.path.isfile(self.inputfile):
-         self._refresh_inputfile_stats()
+      if inputfile != False:
+         if os.path.isfile(inputfile):
+            self.debug(type="INFO:init",msg="inputfile="+inputfile)
+            self.inputfile=inputfile
+            self.inputfile_abspath=os.path.abspath(self.inputfile)
+            self._refresh_inputfile_stats()
+         else:
+            raise Exception("Input file not found.") 
       else:
-         raise Exception("Input file not found.") 
+         raise Exception("Input file given.") 
 
       self.chunk_size=chunk_size
       self.max_chk=math.ceil(self.inputfile_stats.st_size/self.chunk_size)
+      self.debug(type="INFO:init",msg="chunk_size["+str(self.chunk_size)+"] max_chk["+str(self.max_chk)+"]")
 
       if hashfile == False:
          # new
-         self.hashfile_abspath=os.path.abspath(self.inputfile)
-         self.hashfile_hashedname=hashlib.sha512(self.hashfile_abspath.encode()).hexdigest()
+         self.hashfile_hashedname=hashlib.sha512(self.inputfile_abspath.encode()).hexdigest()
          os.makedirs(_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4], exist_ok=True)
          self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+"/"+self.hashfile_hashedname
          # migrate old ones
@@ -176,35 +180,19 @@ class FileHasher():
 
       # self.load_hashes = initial | not-loaded(outdated) | not-loaded(wrong chunk-size) | loaded based on state
 
-      if os.path.isfile(self.hashfile):
-         with open(self.hashfile, 'rb') as handle:
-            data = pickle.load(handle)
-         
-         # check version
-         hashfile_format_version=data.get("version",False)
-         hashfile_inputfile=data.get("inputfile",False)
+      data=self.load_hash(hashfile=self.hashfile, extended_tests=True)
 
-         # version check
-         if  hashfile_format_version == False or hashfile_format_version != self.chunk_file_version:
-            # version does not match
-            self.loaded_hashes="not-loaded(version)"
-            self.save_hashes=True
-         elif data["mtime"] != self.inputfile_stats.st_mtime:
-            self.loaded_hashes="not-loaded(outdated)"
-            self.save_hashes=True
-         elif data["chunk_size"] != self.chunk_size:
-            # wrong chunk_size
-            self.loaded_hashes="not-loaded(wrong chunk-size)"
-            self.save_hashes=True
-         elif hashfile_inputfile != False and hashfile_inputfile != os.path.abspath(self.inputfile):
-            self.loaded_hashes="not-loaded(wrong-inputfile)"
-            self.save_hashes=True
-         else:
-            self.loaded_hashes="loaded"
-            self.hash_obj=data["hashes"]
-            #print(self.hash_obj)
+      if data == False:
+         # no useful hashes available.
+         self.save_hashes=True
+         self.loaded_hashes=self.loaded_hash_error
+         self.hash_obj={}
       else:
-         self.loaded_hashes="initial"
+         # useful hashes
+         self.loaded_hashes="loaded"
+         self.hash_obj=data["hashes"]
+      
+      self.debug(type="INFO:init",msg="Done.")
 
 
    def _refresh_inputfile_stats(self):
@@ -256,44 +244,34 @@ class FileHasher():
 
    def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False):
 
+      self.debug(type="INFO:verify_against",msg="Start - hash_filename["+str(hash_filename)+"] write_delta_file["+str(write_delta_file)+"] chunk_limit["+str(chunk_limit)+"]")
+      # load hashfile to verify against.
+      verify=self.load_hash(hashfile=hash_filename,extended_tests=False)
+
       read_speed=False
       source_file=False
-      if os.path.isfile(hash_filename):
-         # create hash if outdated
-         if len(self.hash_obj) == 0:
-#            self.hash_file(incremental=True)
-            self.save_hashes=True
-            self.hash_obj={}
-         # prepare delta file
+      inputfile_handle=False
 
-         with open(hash_filename, 'rb') as handle:
-            self.verify_data = pickle.load(handle)
-            loaded_hashes=len(self.verify_data["hashes"])
-            #loaded_chunk_size=loaded_hashes["chunk_size"]
-            # TODO: check chunk-size
-#            self.loaded_hashes=self.loaded_hashes+f"- verify [{loaded_hashes}:{hash_filename}]"
-
-         count=0
-         match=0
-         mismatch=0
+      if verify != False:
+         loaded_hashes=len(verify["hashes"])
+         # init counts
+         count=match=mismatch=0
          self.mismatched_idx=[]
 
          if write_delta_file != False:
             delta_file=open(write_delta_file, 'wb')
             print(f"- write delta files {write_delta_file}...")
 
-         inputfile_handle=False
+         # cycle through all chunks
          for self.chk in range(0,self.max_chk):
 
             if chunk_limit != False and mismatch >= chunk_limit:
                # break if we reached chunk_limit
                break
             else:
-
                # get hashes and compare
-
                input_hash=self.hash_obj.get(self.chk,False)
-               compare_hash=self.verify_data["hashes"].get(self.chk,False)
+               compare_hash=verify["hashes"].get(self.chk,False)
                data_chunk=False
 
                # refresh chk if needed
@@ -313,20 +291,17 @@ class FileHasher():
                   # convert to string
                   self.hash_obj[self.chk]=data_hash.hexdigest()
                   #
-                  #self.hash_obj[self.chk]=self.hash_obj.get(self.chk,False)
                   input_hash=self.hash_obj[self.chk]
                   self.save_hashes=True
+                  self.debug(type="INFO:verify_against",msg="read inputfile chk["+str(self.chk)+"] hash["+str(input_hash)+"]")
    #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
 
                # compare
                if input_hash == compare_hash and input_hash != False:
                   match=match+1
-                  #print(f"M", end="")
-                  #print(f"match at {self.chk}")
-                  #print(f"SRC[{input_hash}]")
-                  #print(f"TRG[{compare_hash}]")
                else:
                   mismatch=mismatch+1
+                  self.debug(type="INFO:verify_against",msg="delta at chk["+str(self.chk)+"] SRC["+str(input_hash)+"] VERIFY["+str(compare_hash)+"]")
                   if write_delta_file != False:
                      if source_file == False:
                         source_file=open(self.inputfile,"rb")
@@ -334,16 +309,11 @@ class FileHasher():
                      self.mismatched_idx.append(self.chk)
                      # seek source file
                      if data_chunk == False:
-                        #print(f"R", end="")
-                        print(f"- refresh read chk {self.chk}...")
+                        self.debug(type="INFO:verify_against",msg="re-read inputfile chk["+str(self.chk)+"] hash["+str(input_hash)+"]")
                         source_file.seek(self.chk*self.chunk_size)
                         data_chunk=source_file.read(self.chunk_size)
                      delta_file.write(data_chunk)
-
-                  #print(f"!", end="")
-                  print(f"mismatch at {self.chk}")
-                  print(f"SRC[{input_hash}]")
-                  print(f"TRG[{compare_hash}]")
+                     self.debug(type="INFO:verify_against",msg="write delta file chk["+str(self.chk)+"] data-length["+str(len(data_chunk))+"]")
 
          #print(f"\33[2K\r",end='\r')
          print(f"verify [#{loaded_hashes}:{hash_filename}] loaded - M[#{match}:!#{mismatch}]")
@@ -361,6 +331,8 @@ class FileHasher():
                os.remove(write_delta_file)
       else:
          raise Exception("can not read hash file")
+
+      self.debug(type="INFO:verify_against",msg="Done")
 
    def patch(self, *, delta_file=False):
 
@@ -401,6 +373,63 @@ class FileHasher():
       else:
          print(f"{self.loaded_hashes} - unchanged - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
 
+   def debug(self,*,type="INFO",msg="-"):
+      if self._debug == True:
+         print(f"[{type}]: {msg}")
+
+   def load_hash(self,*, hashfile=False, extended_tests=False):
+
+      self.loaded_hash_error="-"
+      if hashfile != False:
+         self.debug(type="INFO:load_hash",msg="Loading hashfile cwd["+os.getcwd()+"]"+hashfile)
+         if os.path.isfile(hashfile):
+            with open(hashfile, 'rb') as handle:
+               data = pickle.load(handle)
+            
+            try:
+               # check version
+               if data["version"] != self.chunk_file_version:
+                  self.debug(type="INFO:load_hash",msg="version mismatch self["+str(self.chunk_file_version)+"] file["+data["version"]+"]")
+                  self.loaded_hash_error="not-loaded(version)"
+                  return False
+               # check chunk_size
+               if data["chunk_size"] != self.chunk_size:
+                  self.debug(type="INFO:load_hash",msg="chunk_size mismatch self["+str(self.chunk_size)+"] file["+data["chunk_size"]+"]")
+                  self.loaded_hash_error="not-loaded(wrong chunk-size)"
+                  return False
+               
+               # extendend checks
+               if extended_tests == True:
+                  # check if size matches
+                  if data["size"] != self.inputfile_stats.st_size:
+                     self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.size)+"] file["+data["size"]+"]")
+                     self.loaded_hash_error="not-loaded(wrong-size)"
+                     return False
+                  # check mtime
+                  if data["mtime"] != self.inputfile_stats.st_mtime:
+                     self.debug(type="INFO:load_hash",msg="mtime mismatch self["+str(self.inputfile_stats.st_mtime)+"] file["+data["mtime"]+"]")
+                     self.loaded_hash_error="not-loaded(wrong-mtime)"
+                     return False
+                  # check filename
+                  if data["inputfile"] != os.path.abspath(self.inputfile):
+                     self.debug(type="INFO:load_hash",msg="inputfile mismatch self["+self.inputfile+"] file["+data["inputfile"]+"]")
+                     self.loaded_hash_error="not-loaded(wrong-inputfile)"
+                     return False
+            except:
+               self.debug(type="INFO:load_hash",msg="exception triggered.")
+               self.loaded_hash_error="not-loaded(unknown)"
+               return False            
+            
+            # all good
+            return data
+         else:
+            self.debug(type="WARNING:load_hash",msg="Hashfile to load does not exist.")
+            self.loaded_hash_error="initial"
+      else:
+         raise Exception("not hash file to load provided.")
+      
+      return False
+
    def save_hash(self):
 
       if self.save_hashes == True:
@@ -435,7 +464,7 @@ elif args.show_hashes != False:
 else:
    # print (args)
 
-   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile)
+   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    atexit.register(save_hash_file)
 
    if args.verify_against == False and args.apply_delta_file == False:
