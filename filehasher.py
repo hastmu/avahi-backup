@@ -159,6 +159,7 @@ class FileHasher():
          raise Exception("Input file not found.") 
 
       self.chunk_size=chunk_size
+      self.max_chk=math.ceil(self.inputfile_stats.st_size/self.chunk_size)
 
       if hashfile == False:
          # new
@@ -232,7 +233,6 @@ class FileHasher():
          self.hash_obj={}
 
       self.chk=int(0)
-      self.max_chk=math.ceil(self.inputfile_stats.st_size/self.chunk_size)
       with open(self.inputfile,"rb") as f:
          if incremental == True:
             self.chk=len(self.hash_obj)
@@ -283,7 +283,7 @@ class FileHasher():
             print(f"- write delta files {write_delta_file}...")
 
          inputfile_handle=False
-         for self.chk in range(0,loaded_hashes):
+         for self.chk in range(0,self.max_chk):
 
             if chunk_limit != False and mismatch >= chunk_limit:
                # break if we reached chunk_limit
@@ -357,6 +357,7 @@ class FileHasher():
             delta_file.close()
             if mismatch > 0:
                # TODO: store also chunk-size 
+               # TODO: store size of file to enable truncation.
                with open(write_delta_file+".hash", 'wb') as handle:
                   pickle.dump(self.mismatched_idx, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
@@ -381,6 +382,7 @@ class FileHasher():
 
          with open(delta_file, 'rb') as patch_data_file:
             with open(self.inputfile, 'r+b') as target_file:
+               # TODO: truncate to size.
                for idx in patch_chk_list:
                   print(f"  - patch chk {idx}")
                   chk_data=patch_data_file.read(self.chunk_size)
@@ -411,6 +413,7 @@ class FileHasher():
          data["hashes"]=self.hash_obj
          data["chunk_size"]=self.chunk_size
          data["mtime"]=self.inputfile_stats.st_mtime
+         data["size"]=self.inputfile_stats.st_size
          
          # save
          with open(self.hashfile, 'wb') as handle:
@@ -418,7 +421,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.8"
+version="1.0.9"
 
 if args.version == True:
    print(f"{version}")
