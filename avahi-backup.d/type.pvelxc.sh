@@ -250,7 +250,7 @@ function type.pvelxc.perform.backup() {
                ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
                   "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
                   --inputfile "${storage_path}" \
-                  --verify-against "${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}" --delta-file "${storage_path}.delta"
+                  --verify-against "${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}" --delta-file "${storage_path}.delta" --chunk-limit 1024
                stat=$?
                # TODO: detect if there is no delta file.
                output "        - stat: ${stat}"
