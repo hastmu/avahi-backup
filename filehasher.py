@@ -20,6 +20,7 @@ import argparse
 parser = argparse.ArgumentParser("filehasher")
 parser.add_argument("--version", action='store_true', help="show version and exit")
 parser.add_argument("--debug", action='store_true', help="enable debug messages")
+parser.add_argument("--report-used-hashfile", action='store_true', help="reports used hashfile and exits.")
 
 group = parser.add_argument_group('Hashing...')
 group.add_argument("--inputfile", help="file which should be hashed.", type=str, default=False)
@@ -132,6 +133,7 @@ class speed():
 class FileHasher():
 
    chunk_file_version = "v1.0.2"
+   patch_file_version = "v1.0.0"
 
    def __init__(self,* , inputfile=False, hashfile=False, chunk_size=8192, hash_method="flat", debug=False):
 
@@ -194,7 +196,6 @@ class FileHasher():
       
       self.debug(type="INFO:init",msg="Done.")
 
-
    def _refresh_inputfile_stats(self):
       self.inputfile_stats = os.stat(self.inputfile)
       self.mtime=self.inputfile_stats.st_mtime
@@ -240,11 +241,20 @@ class FileHasher():
             self.hash_obj[self.chk]=data.hexdigest()
             self.chk=self.chk+1
       print(f"\33[2K\r",end='\r')
-            
 
    def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False):
 
       self.debug(type="INFO:verify_against",msg="Start - hash_filename["+str(hash_filename)+"] write_delta_file["+str(write_delta_file)+"] chunk_limit["+str(chunk_limit)+"]")
+      # prepare delta metadata
+      if write_delta_file != False:
+         patch_data={
+            "version": self.patch_file_version,
+            "stats" : self.inputfile_stats,
+            "chunk_size": self.chunk_size,
+            "mismatch_idx": [], 
+            "mismatch_idx_hashes": {} 
+         }
+
       # load hashfile to verify against.
       verify=self.load_hash(hashfile=hash_filename,extended_tests=False)
 
@@ -257,6 +267,7 @@ class FileHasher():
          # init counts
          count=match=mismatch=0
          self.mismatched_idx=[]
+         self.mismatched_idx_hashes={}
 
          if write_delta_file != False:
             delta_file=open(write_delta_file, 'wb')
@@ -307,6 +318,7 @@ class FileHasher():
                         source_file=open(self.inputfile,"rb")
                         source_file.seek(0)
                      self.mismatched_idx.append(self.chk)
+                     self.mismatched_idx_hashes[self.chk]=input_hash
                      # seek source file
                      if data_chunk == False:
                         self.debug(type="INFO:verify_against",msg="re-read inputfile chk["+str(self.chk)+"] hash["+str(input_hash)+"]")
@@ -325,8 +337,10 @@ class FileHasher():
             if mismatch > 0:
                # TODO: store also chunk-size 
                # TODO: store size of file to enable truncation.
+               patch_data["mismatch_idx"]=self.mismatched_idx
+               patch_data["mismatch_idx_hashes"]=self.mismatched_idx_hashes
                with open(write_delta_file+".hash", 'wb') as handle:
-                  pickle.dump(self.mismatched_idx, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                  pickle.dump(patch_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
                os.remove(write_delta_file)
       else:
@@ -342,11 +356,22 @@ class FileHasher():
          raise Exception("delta file do not exist or not complete")
       else:
          # read hash file
-         # TODO: add meta data like file format version + chunk size to check if mismatches would corrupt the target file
+         # DONE: add meta data like file format version + chunk size to check if mismatches would corrupt the target file
+         # - patch_data is there evaluate it and apply stats to target file.
 
          with open(delta_file+".hash", 'rb') as handle:
-            patch_chk_list = pickle.load(handle)
+            patch_data = pickle.load(handle)
 
+         # TODO: patch_data["mismatch_idx_hashes"]
+         # TODO: stats.
+         if patch_data["version"] != self.patch_file_version:
+            raise Exception("delta file version ["+str(patch_data["version"])+"] mismatch self["+str(self.patch_file_version)+"]")
+
+         # check chunk_size
+         if patch_data["chunk_size"] != self.chunk_size:
+            raise Exception("Chunk size mismatch between delta file ["+str(patch_data["chunk_size"])+"] and file ["+str(self.chunk_size)+"] to patch. Fatal.")
+
+         patch_chk_list=patch_data["mismatch_idx"]
          print(f"- {len(patch_chk_list)} chunks to patch...")
 
          with open(delta_file, 'rb') as patch_data_file:
@@ -366,7 +391,6 @@ class FileHasher():
          self._refresh_inputfile_stats()
 
    def feedback(self):
-
       # save hashes ?
       if self.save_hashes == True:
          print(f"{self.loaded_hashes} - updated - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
@@ -447,7 +471,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.9"
+version="1.0.10"
 
 if args.version == True:
    print(f"{version}")
@@ -465,6 +489,10 @@ else:
    # print (args)
 
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
+   if args.report_used_hashfile == True:
+      print(f"{FH.hashfile}")
+      exit(0)
+
    atexit.register(save_hash_file)
 
    if args.verify_against == False and args.apply_delta_file == False:
