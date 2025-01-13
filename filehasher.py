@@ -173,10 +173,6 @@ class FileHasher():
          self.hashfile_hashedname=hashlib.sha512(self.inputfile_abspath.encode()).hexdigest()
          os.makedirs(_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4], exist_ok=True)
          self.hashfile=_CFG["default_hash_basedir"]+"/"+self.hashfile_hashedname[0:2]+"/"+self.hashfile_hashedname[2:4]+"/"+self.hashfile_hashedname
-         # migrate old ones
-         if os.path.isfile(self.inputfile+".hash."+str(self.chunk_size)):
-            import shutil
-            shutil.move(self.inputfile+".hash."+str(self.chunk_size),self.hashfile)
       else:
          self.hashfile=hashfile
 
@@ -471,7 +467,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.10"
+version="1.0.11"
 
 if args.version == True:
    print(f"{version}")
