@@ -331,8 +331,12 @@ class FileHasher():
                source_file.close()
             delta_file.close()
             if mismatch > 0:
-               # TODO: store also chunk-size 
-               # TODO: store size of file to enable truncation.
+               patch_data["version"]=self.chunk_file_version
+               patch_data["mtime"]=self.inputfile_stats.st_mtime
+               patch_data["size"]=self.inputfile_stats.st_size
+               patch_data["uid"]=self.inputfile_stats.st_uid
+               patch_data["gid"]=self.inputfile_stats.st_gid
+               patch_data["chunk_size"]=self.chunk_size
                patch_data["mismatch_idx"]=self.mismatched_idx
                patch_data["mismatch_idx_hashes"]=self.mismatched_idx_hashes
                with open(write_delta_file+".hash", 'wb') as handle:
