@@ -331,12 +331,6 @@ class FileHasher():
                source_file.close()
             delta_file.close()
             if mismatch > 0:
-               patch_data["version"]=self.chunk_file_version
-               patch_data["mtime"]=self.inputfile_stats.st_mtime
-               patch_data["size"]=self.inputfile_stats.st_size
-               patch_data["uid"]=self.inputfile_stats.st_uid
-               patch_data["gid"]=self.inputfile_stats.st_gid
-               patch_data["chunk_size"]=self.chunk_size
                patch_data["mismatch_idx"]=self.mismatched_idx
                patch_data["mismatch_idx_hashes"]=self.mismatched_idx_hashes
                with open(write_delta_file+".hash", 'wb') as handle:
@@ -359,17 +353,10 @@ class FileHasher():
          # DONE: add meta data like file format version + chunk size to check if mismatches would corrupt the target file
          # - patch_data is there evaluate it and apply stats to target file.
 
-         with open(delta_file+".hash", 'rb') as handle:
-            patch_data = pickle.load(handle)
-
-         # TODO: patch_data["mismatch_idx_hashes"]
+         # loads and checks, version + chunk_size
+         patch_data=self.load_hash(hashfile=delta_file+".hash",extended_tests=False,type_patch_file=True)
+         
          # TODO: stats.
-         if patch_data["version"] != self.patch_file_version:
-            raise Exception("delta file version ["+str(patch_data["version"])+"] mismatch self["+str(self.patch_file_version)+"]")
-
-         # check chunk_size
-         if patch_data["chunk_size"] != self.chunk_size:
-            raise Exception("Chunk size mismatch between delta file ["+str(patch_data["chunk_size"])+"] and file ["+str(self.chunk_size)+"] to patch. Fatal.")
 
          patch_chk_list=patch_data["mismatch_idx"]
          print(f"- {len(patch_chk_list)} chunks to patch...")
@@ -378,15 +365,20 @@ class FileHasher():
             with open(self.inputfile, 'r+b') as target_file:
                # TODO: truncate to size.
                for idx in patch_chk_list:
-                  print(f"  - patch chk {idx}")
                   chk_data=patch_data_file.read(self.chunk_size)
                   target_file.seek(idx * self.chunk_size)
                   data=hashlib.sha256(chk_data)
                   # convert to string
                   self.hash_obj[idx]=data.hexdigest()
+                  # TODO: compare the local calc with the sent to confirm data is right!
+                  print(f"  - patch chk {idx} send[{self.hash_obj[idx]}] remote["+patch_data["mismatch_idx_hashes"][idx]+"]")
                   self.save_hashes=True
                   target_file.write(chk_data)
-         
+
+               # truncate to given size
+               print(f"- truncate to "+str(patch_data["stats"].st_size)+".")
+               target_file.truncate(patch_data["stats"].st_size)
+
          print(f"- Done.")
          self._refresh_inputfile_stats()
 
@@ -401,7 +393,7 @@ class FileHasher():
       if self._debug == True:
          print(f"[{type}]: {msg}")
 
-   def load_hash(self,*, hashfile=False, extended_tests=False):
+   def load_hash(self,*, hashfile=False, extended_tests=False,type_patch_file=False):
 
       self.loaded_hash_error="-"
       if hashfile != False:
@@ -412,8 +404,14 @@ class FileHasher():
             
             try:
                # check version
-               if data["version"] != self.chunk_file_version:
-                  self.debug(type="INFO:load_hash",msg="version mismatch self["+str(self.chunk_file_version)+"] file["+data["version"]+"]")
+
+               if type_patch_file == False:
+                  target_version=self.chunk_file_version
+               else:
+                  target_version=self.patch_file_version
+
+               if data["version"] != target_version:
+                  self.debug(type="INFO:load_hash",msg="version mismatch self["+str(target_version)+"] file["+data["version"]+"]")
                   self.loaded_hash_error="not-loaded(version)"
                   return False
                # check chunk_size
@@ -422,7 +420,7 @@ class FileHasher():
                   self.loaded_hash_error="not-loaded(wrong chunk-size)"
                   return False
                
-               # extendend checks
+               # extended checks
                if extended_tests == True:
                   # check if size matches
                   if data["size"] != self.inputfile_stats.st_size:
