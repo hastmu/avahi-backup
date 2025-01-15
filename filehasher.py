@@ -575,11 +575,17 @@ elif args.remote_patching == True:
       ssh.connect(args.remote_hostname, username=args.remote_username, pkey=pkey, look_for_keys=False)
    else:
       ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
-   ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
-   remote_version=ssh_stdout.readline().strip()
+   
+   # skip version check if already done. set FILEHASHER_SKIP_VERSION
+   if os.environ.get("FILEHASHER_SKIP_VERSION",False) == False:
+      ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
+      remote_version=ssh_stdout.readline().strip()
+   else
+      remote_version=version
+
    if remote_version == version:
       with open(FH.hashfile,"rb") as handle:
-         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
          ssh_stdin.write(handle.read())
 
          patch_data=FH.receive_msg(pipe=ssh_stdout)
