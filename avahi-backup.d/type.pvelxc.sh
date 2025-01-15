@@ -98,7 +98,7 @@ function type.pvelxc.check.preflight() {
          break
       fi
    done
-   if [ $h_match -eq 1 ] || [ ${RUNTIME_ITEM["pvelxc"]} -eq 101000 ]
+   if [ $h_match -eq 1 ] || [ ${RUNTIME_ITEM["pvelxc"]} -eq 1100000 ]
    then
       # stop hours match
       stat=0
@@ -120,14 +120,12 @@ function type.pvelxc.check.preflight() {
       local local_version
       if [ -z "${RUNTIME_NODE["filehasher.remote_version.stat"]}" ]
       then
-         local_version="$(filehasher.py --version)"
-         RUNTIME_NODE["filehasher.remote_version"]="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py --version)"
-
-         if [ "${local_version}" == "${RUNTIME_NODE["filehasher.remote_version"]}" ]
+         if remote.hasher.version "${RUNTIME["BACKUP_HOSTNAME"]}"
          then
-            output "- filehasher check local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
+            # match
             RUNTIME_NODE["filehasher.remote_version.stat"]=0
          else
+            # mismatch
             SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} filehasher version mismatch local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
             output "! filehasher check local[${local_version}] remote[${RUNTIME_NODE["filehasher.remote_version"]}]"
             RUNTIME_NODE["filehasher.remote_version.stat"]=1
@@ -149,15 +147,22 @@ function type.pvelxc.check.preflight() {
       local item=""
       for item in $(find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw")
       do
-         timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile "${item}"
-         if [ $? -eq 0 ]
+         if hash.local_file "30s" "${_PVELXC["cfg.min-chunk-size"]}" "${item}"
          then
             _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
-         elif [ $? -ne 0 ]
-         then
+         else
             SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} ${RUNTIME_ITEM["pvelxc"]} local hash updating ${item}"
             _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
          fi
+
+#         timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile "${item}"
+#         if [ $? -eq 0 ]
+#         then
+#            _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
+#         else
+#            SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} ${RUNTIME_ITEM["pvelxc"]} local hash updating ${item}"
+#            _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
+#         fi
       done
    fi
    error_count=$(( error_count + stat ))
@@ -221,7 +226,7 @@ function type.pvelxc.perform.backup() {
                # filehasher way
                # check local hashs
                # TODO: change back to 10s
-               timeout 10m filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
+               timeout 10s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
                               --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" >> /dev/null
                stat=$?
 
@@ -238,13 +243,17 @@ function type.pvelxc.perform.backup() {
                fi
 
                # copy local hash to remote and trigger compare
+               local local_hash_file=""
+               local_hash_file="$(filehasher.py --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" --report-used-hashfile "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}")"
                T_DIR=$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" mktemp -d)
                local remote_hash_file
                remote_hash_file="${RUNTIME["BACKUP_HOSTNAME"]}:${T_DIR}/${trg}.hash.${RUNTIME_ITEM["pvelxc"]}"
-               output "      - local:  ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
+               # TODO: Think what is the right local hash location? default or inside the backup data?
+               # output "      - local:  ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}"
+               output "      - local:  ${local_hash_file}"
                output "      - remote: ${remote_hash_file}"
 
-               scp.cmd "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}.hash.${_PVELXC["cfg.min-chunk-size"]}" "${remote_hash_file}"
+               scp.cmd "${local_hash_file}" "${remote_hash_file}"
                output "      - create delta file..."
 
                ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
