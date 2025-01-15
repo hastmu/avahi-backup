@@ -247,7 +247,7 @@ class FileHasher():
             self.chk=self.chk+1
       print(f"\33[2K\r",end='\r')
 
-   def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False):
+   def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False, remote_delta=False):
 
       self.debug(type="INFO:verify_against",msg="Start - hash_filename["+str(hash_filename)+"] write_delta_file["+str(write_delta_file)+"] chunk_limit["+str(chunk_limit)+"]")
       # prepare delta metadata
@@ -259,6 +259,16 @@ class FileHasher():
             "mismatch_idx": [], 
             "mismatch_idx_hashes": {} 
          }
+      # remote delta
+      if remote_delta != False:
+         patch_data={
+            "version": self.patch_file_version,
+            "stats" : self.inputfile_stats,
+            "chunk_size": self.chunk_size,
+         }
+         send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
+         print(f"{len(send_data)}")
+         
 
       # load hashfile to verify against.
       verify=self.load_hash(hashfile=hash_filename,extended_tests=False)
@@ -547,7 +557,7 @@ else:
 
    elif args.verify_against != False:
       # verify branch
-      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file,chunk_limit=args.chunk_limit)
+      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file,chunk_limit=args.chunk_limit,remote_delta=args.remote_delta)
       if args.delta_file != False:
          if len(FH.mismatched_idx)>0:
             # there is a delta exit = 0
