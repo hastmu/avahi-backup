@@ -268,6 +268,7 @@ class FileHasher():
          }
          send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
          print(f"{len(send_data)}")
+         print(send_data)
          
 
       # load hashfile to verify against.
@@ -526,6 +527,12 @@ elif args.remote_patching == True:
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
          ssh_stdin.write(handle.read())
 
+         # read first pickle
+         length=ssh_stdout.readline()
+         data=ssh_stdout.read(length)
+         patch_data=pickle.load(data)
+         print(patch_data)
+         
          print(ssh_stdout.readline())
          print(ssh_stdout.read())
          print(ssh_stderr.read())
