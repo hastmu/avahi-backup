@@ -32,9 +32,18 @@ group.add_argument("--hashfile", help="define which hashfile is used",default=Fa
 group = parser.add_argument_group('Verifying...')
 group.add_argument("--verify-against", help="hashed which should be verified for matching", type=str, default=False)
 group.add_argument("--delta-file", help="store deltas to this file for patching", type=str, default=False)
+group.add_argument("--remote-delta", action='store_true', help="sents delta for remote-patching")
 group.add_argument("--chunk-limit", help="limit written deltas per run", type=int, default=False)
 group = parser.add_argument_group('Patching...')
 group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
+
+group = parser.add_argument_group('Remote patching...')
+group.add_argument("--remote-patching", action='store_true', help="starts remote patching process via ssh...")
+group.add_argument("--remote-hostname", help="remote hostname", type=str, default=False)
+group.add_argument("--remote-src-filename", help="remote file name which is source of patching", type=str, default=False)
+group.add_argument("--remote-username", help="ssh key to load in addition to use", type=str, default=False)
+group.add_argument("--remote-password", help="ssh key to load in addition to use", type=str, default=False)
+group.add_argument("--remote-ssh-key", help="ssh key to load in addition to use", type=str, default=False)
 
 group = parser.add_argument_group('Debugging...')
 group.add_argument("--show-hashes", help="lists stored hashes in hash file", type=str, default=False)
@@ -477,7 +486,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.12"
+version="1.0.13"
 
 if args.version == True:
    print(f"{version}")
@@ -490,6 +499,28 @@ elif args.show_hashes != False:
       print(json.dumps(data))
    else:
       raise Exception("can not load hash file")
+
+elif args.remote_patching == True:
+   print(f"- Remote patching...")
+   FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
+   atexit.register(save_hash_file)
+
+   import paramiko
+   ssh = paramiko.SSHClient()
+   ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+   ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
+   ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
+   remote_version=ssh_stdout.readline().strip()
+   if remote_version == version:
+      with open(FH.hashfile,"rb") as handle:
+         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+         ssh_stdin.write(handle.read())
+
+         print(ssh_stdout.readline())
+         print(ssh_stdout.read())
+         print(ssh_stderr.read())
+   else:
+      raise Exception("local and remote version do not match")
 
 else:
    # print (args)
