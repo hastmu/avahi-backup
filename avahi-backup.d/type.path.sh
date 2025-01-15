@@ -148,6 +148,16 @@ function type.path.perform.backup() {
 
    for LINE in "${FLIST[@]}"
    do
+      #
+      echo "=========================================================="
+      hash.transfer_remote_file \
+         "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${LINE}" \
+         "$(( 8 * 1024 * 1024 ))" \
+         "${src#*:}/${LINE}" \
+         "${RUNTIME["BACKUP_HOSTNAME"]}"
+      echo "=========================================================="
+
+      #
       output "  - local hashing scanned[${count}] item[${item_count}/${item_max}] time left[${time_left} sec]: ${LINE}"
       if [ -e "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${LINE}" ]
       then
@@ -183,98 +193,99 @@ function type.path.perform.backup() {
       fi
    done
 
-   # stop >1GB
+#   # stop >1GB
    if [ ${#HASHED_FILES[@]} -ne 0 ]
    then
-      output "- new large file sync..."
-      declare -p HASHED_FILES
-
-      local TDIR=""
-      TDIR="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" mktemp -d)"
-      if [ -z "${TDIR}" ]
-      then
-         # remote temp not ready (disk full?)
-         output "  - remote tmp not ready! - please fix"
-         SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} >= 1GB - remote tmp not ready - please fix."
-         stat=1
-      else
-         TDF="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" df --output=avail "${TDIR}" | tail -1)"
-         # get 20% of free space in chunk slices
-         T_DELTA_CHUNKS=$(( ( TDF / ( 8 * 1024 * 1024 )) * 100 / 20 ))
-         
-         #FIELD_LIST  is a comma-separated list of columns to be included.  Valid field names are: 'source', 'fstype', 'itotal', 'iused', 'iavail', 'ipcent', 'size', 'used', 'avail',
-         #  'pcent', 'file' and 'target' (see info page)
-
-         output "- remote TDIR: ${TDIR} - free[${TDF}] - delta chunks[${T_DELTA_CHUNKS}]"
-         # todo: create tmp -> get free space -> take 20% -> build deltas. -> copy them ->
-
-         for item in "${HASHED_FILES[@]}"
-         do
-            local uuid="$(uuidgen)"
-
-            output "- ${uuid}: ${item}"
-            
-            # copy hash data to remote
-            output "  - local hash data: ${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}"
-            if [ -e "${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}" ]
-            then
-               # incremental copy
-
-               scp.cmd "${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}" "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.hash"
-               
-               # TODO: remote file hash location
-               ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
-                  "--min-chunk-size=$(( 8 * 1024 * 1024 ))" \
-                  --inputfile \"${src#*:}/${item}\" \
-                  --verify-against "${TDIR}/${uuid}.hash" --delta-file "${TDIR}/${uuid}.delta" --chunk-limit "${T_DELTA_CHUNKS}"
-               
-               if [ $? -eq 0 ]
-               then
-                  output "  - patching..."
-                  # copy delta files from remote
-                  # TODO: better local tmp location
-                  scp.cmd "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.delta" "./${uuid}.delta"
-                  scp.cmd "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.delta.hash" "./${uuid}.delta.hash"
-
-                  # patch 
-                  filehasher.py \
-                     "--min-chunk-size=$(( 8 * 1024 * 1024 ))" \
-                     --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" \
-                     --apply-delta-file "./${uuid}.delta"
-
-                  output "- patching exit: $?"
-
-                  rm -fv "./${uuid}.delta" "./${uuid}.delta.hash"
-
-                  stat=1
-                  SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} >= 1GB new implementation not complete"
-                  break
-               else
-                  output "  - no patching"
-                  # cleanup hash file
-                  ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -fv "${TDIR}/${uuid}.hash"
-               fi
-            else
-               # first time new file
-               output "  - new item: ${item}..."
-               timeout -s INT 1m rsync -e "ssh -i .ssh/backup" \
-                  ${RUNTIME["RSYNC_ARGS"]} -i \
-                  -av --bwlimit=40000 \
-                  --info=progress2 --stats --inplace --partial \
-                  "${src}/${item}" \
-                  "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" 2>&1 \
-                  | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
-                  | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
-         
-               # TODO: check if really incomplete
-               stat=1
-
-           fi
-
-         done
-
-         ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -Rfv "${TDIR}"
-      fi
+      :
+#      output "- new large file sync..."
+#      declare -p HASHED_FILES
+#
+#      local TDIR=""
+#      TDIR="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" mktemp -d)"
+#      if [ -z "${TDIR}" ]
+#      then
+#         # remote temp not ready (disk full?)
+#         output "  - remote tmp not ready! - please fix"
+#         SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} >= 1GB - remote tmp not ready - please fix."
+#         stat=1
+#      else
+#         TDF="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" df --output=avail "${TDIR}" | tail -1)"
+#         # get 20% of free space in chunk slices
+#         T_DELTA_CHUNKS=$(( ( TDF / ( 8 * 1024 * 1024 )) * 100 / 20 ))
+#         
+#         #FIELD_LIST  is a comma-separated list of columns to be included.  Valid field names are: 'source', 'fstype', 'itotal', 'iused', 'iavail', 'ipcent', 'size', 'used', 'avail',
+#         #  'pcent', 'file' and 'target' (see info page)
+#
+#         output "- remote TDIR: ${TDIR} - free[${TDF}] - delta chunks[${T_DELTA_CHUNKS}]"
+#         # todo: create tmp -> get free space -> take 20% -> build deltas. -> copy them ->
+#
+#         for item in "${HASHED_FILES[@]}"
+#         do
+#            local uuid="$(uuidgen)"
+#
+#            output "- ${uuid}: ${item}"
+#            
+#            # copy hash data to remote
+#            output "  - local hash data: ${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}"
+#            if [ -e "${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}" ]
+#            then
+#               # incremental copy
+#
+#               scp.cmd "${HASH_DATA["${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"]}" "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.hash"
+#               
+#               # TODO: remote file hash location
+#               ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" filehasher.py \
+#                  "--min-chunk-size=$(( 8 * 1024 * 1024 ))" \
+#                  --inputfile \"${src#*:}/${item}\" \
+#                  --verify-against "${TDIR}/${uuid}.hash" --delta-file "${TDIR}/${uuid}.delta" --chunk-limit "${T_DELTA_CHUNKS}"
+#               
+#               if [ $? -eq 0 ]
+#               then
+#                  output "  - patching..."
+#                  # copy delta files from remote
+#                  # TODO: better local tmp location
+#                  scp.cmd "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.delta" "./${uuid}.delta"
+#                  scp.cmd "${RUNTIME["BACKUP_HOSTNAME"]}:${TDIR}/${uuid}.delta.hash" "./${uuid}.delta.hash"
+#
+#                  # patch 
+#                  filehasher.py \
+#                     "--min-chunk-size=$(( 8 * 1024 * 1024 ))" \
+#                     --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" \
+#                     --apply-delta-file "./${uuid}.delta"
+#
+#                  output "- patching exit: $?"
+#
+#                  rm -fv "./${uuid}.delta" "./${uuid}.delta.hash"
+#
+#                  stat=1
+#                  SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} >= 1GB new implementation not complete"
+#                  break
+#               else
+#                  output "  - no patching"
+#                  # cleanup hash file
+#                  ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -fv "${TDIR}/${uuid}.hash"
+#               fi
+#            else
+#               # first time new file
+#               output "  - new item: ${item}..."
+#               timeout -s INT 1m rsync -e "ssh -i .ssh/backup" \
+#                  ${RUNTIME["RSYNC_ARGS"]} -i \
+#                  -av --bwlimit=40000 \
+#                  --info=progress2 --stats --inplace --partial \
+#                  "${src}/${item}" \
+#                  "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" 2>&1 \
+#                  | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
+#                  | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
+#         
+#               # TODO: check if really incomplete
+#               stat=1
+#
+#           fi
+#
+#         done
+#
+#         ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -Rfv "${TDIR}"
+#      fi
 
       # TODO: error handling
 
