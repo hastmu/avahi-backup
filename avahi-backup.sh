@@ -41,6 +41,8 @@ CFG["avahi.service_name.server"]="_${CFG["name"]}-server._tcp"
 CFG["skip.backup.younger.than"]=86400
 CFG["zfs.zero_size_snapshot_cleanup_limit"]=1000
 
+# TODO: ssh compression off -o "Compression no" also in rsyncs
+# TODO: turn off rsync compression
 
 # declare -p RUNTIME
 #declare -p CFG
@@ -335,7 +337,7 @@ init-backup-client) {
    :
 } ;;
 
-browse) { ##help## browse             ... show avahi annoucnements...
+browse) { ##help## browse             ... show avahi announcements...
    output "AVAHI-Announcements:"
    avahi-browse -tpr "${CFG["avahi.service_name"]}" \
    | grep "^="
@@ -412,6 +414,20 @@ backup-client) {
 } ;;
 
 backup) {
+
+   # do not run backups when those processes are around
+   declare -a blacklist
+   blacklist[${#blacklist[@]}]="steamlink"
+   blacklist[${#blacklist[@]}]="moonlight"
+
+   for item in ${blacklist[@]}
+   do
+      if pgrep ${item} >> /dev/null 2>&1
+      then 
+         output "- blacklist process[${item}] found. do not run."
+         exit 1
+      fi
+   done
 
    lock server "${1+"$@"}"
 
