@@ -266,8 +266,8 @@ class FileHasher():
             "stats" : self.inputfile_stats,
             "chunk_size": self.chunk_size,
          }
-         send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
          import base64
+         send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
          send_data=base64.b64encode(send_data).decode()
          print(f"{len(send_data)}")
          print(send_data)
@@ -330,7 +330,8 @@ class FileHasher():
                else:
                   mismatch=mismatch+1
                   self.debug(type="INFO:verify_against",msg="delta at chk["+str(self.chk)+"] SRC["+str(input_hash)+"] VERIFY["+str(compare_hash)+"]")
-                  if write_delta_file != False:
+                  
+                  if write_delta_file != False or remote_delta != False:
                      if source_file == False:
                         source_file=open(self.inputfile,"rb")
                         source_file.seek(0)
@@ -341,7 +342,21 @@ class FileHasher():
                         self.debug(type="INFO:verify_against",msg="re-read inputfile chk["+str(self.chk)+"] hash["+str(input_hash)+"]")
                         source_file.seek(self.chk*self.chunk_size)
                         data_chunk=source_file.read(self.chunk_size)
-                     delta_file.write(data_chunk)
+                     
+                     if write_delta_file != False:
+                        delta_file.write(data_chunk)
+                     if remote_delta != False:
+                        send_data={
+                           "type": "chunk",
+                           "chunk": self.chk,
+                           "chunk_data": data_chunk,
+                           "chunk_hash": input_hash
+                        }
+                        send_data=pickle.dumps(send_data, protocol=pickle.HIGHEST_PROTOCOL)
+                        send_data=base64.b64encode(send_data).decode()
+                        print(f"{len(send_data)}")
+                        print(send_data)
+
                      self.debug(type="INFO:verify_against",msg="write delta file chk["+str(self.chk)+"] data-length["+str(len(data_chunk))+"]")
 
          #print(f"\33[2K\r",end='\r')
@@ -528,14 +543,18 @@ elif args.remote_patching == True:
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
          ssh_stdin.write(handle.read())
 
+         import base64
          # read first pickle
          length=ssh_stdout.readline().strip()
-         print(f"length {length}")
-#         data=ssh_stdout.read(int(length))
-#         print(f"{len(data)}")
-#         patch_data=pickle.loads(data)
- #        print(patch_data)
+         data=ssh_stdout.read(int(length))
+         patch_data=pickle.loads(base64.b64decode(data))
+         print(patch_data)
          
+         length=ssh_stdout.readline().strip()
+         data=ssh_stdout.read(int(length))
+         data=pickle.loads(base64.b64decode(data))
+         print(data)
+
          print(ssh_stdout.readline())
          print(ssh_stdout.read())
          print(ssh_stderr.read())
