@@ -56,6 +56,7 @@ def save_hash_file():
 
 import signal
 import sys
+import base64
 
 def sigterm_handler(_signo, _stack_frame):
     # Raises SystemExit(0):
@@ -247,6 +248,27 @@ class FileHasher():
             self.chk=self.chk+1
       print(f"\33[2K\r",end='\r')
 
+   def send_msg(self, *, type=False, data={}):
+      data["type"]=type
+      import base64
+      send_data=pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+      send_data=base64.b64encode(send_data).decode()
+      print(f"{len(send_data)}")
+      print(send_data,end="")
+
+   def receive_msg(self,*, pipe):
+      data={}
+      try:
+         length=pipe.readline().strip()
+         if length.isdigit():
+            data=pipe.read(int(length))
+            data=pickle.loads(base64.b64decode(data))
+         else:
+            data["type"]="null"
+      except:
+         data["type"]="null"
+      return data
+
    def verify_against(self,*, hash_filename, write_delta_file=False, chunk_limit=False, remote_delta=False):
 
       self.debug(type="INFO:verify_against",msg="Start - hash_filename["+str(hash_filename)+"] write_delta_file["+str(write_delta_file)+"] chunk_limit["+str(chunk_limit)+"]")
@@ -266,11 +288,7 @@ class FileHasher():
             "stats" : self.inputfile_stats,
             "chunk_size": self.chunk_size,
          }
-         import base64
-         send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
-         send_data=base64.b64encode(send_data).decode()
-         print(f"{len(send_data)}")
-         print(send_data)
+         self.send_msg(type="metadata",data=patch_data)
 
       # load hashfile to verify against.
       verify=self.load_hash(hashfile=hash_filename,extended_tests=False)
@@ -311,7 +329,8 @@ class FileHasher():
                      source_file.seek(0)
                   # we need to hash the file again.
                   # TODO: make that method agnostic.
-                  read_speed.update_run(self.chunk_size)
+                  if remote_delta == False:
+                     read_speed.update_run(self.chunk_size)
                   source_file.seek(self.chk*self.chunk_size)
                   data_chunk=source_file.read(self.chunk_size)
                   # calc hash
@@ -347,15 +366,11 @@ class FileHasher():
                         delta_file.write(data_chunk)
                      if remote_delta != False:
                         send_data={
-                           "type": "chunk",
                            "chunk": self.chk,
                            "chunk_data": data_chunk,
                            "chunk_hash": input_hash
                         }
-                        send_data=pickle.dumps(send_data, protocol=pickle.HIGHEST_PROTOCOL)
-                        send_data=base64.b64encode(send_data).decode()
-                        print(f"{len(send_data)}")
-                        print(send_data)
+                        self.send_msg(type="chunk",data=send_data)
 
                      self.debug(type="INFO:verify_against",msg="write delta file chk["+str(self.chk)+"] data-length["+str(len(data_chunk))+"]")
 
@@ -378,6 +393,36 @@ class FileHasher():
 
       self.debug(type="INFO:verify_against",msg="Done")
 
+   def patch_chk(self, *, target_file=False, chunk=False, chunk_data=False, chunk_hash=False):
+
+      close_file=False
+      if target_file == False:
+         target_file=open(self.inputfile, 'r+b')
+         close_file=True
+
+      target_file.seek(chunk * self.chunk_size)
+      data_hash=hashlib.sha256(chunk_data)
+      data_hash=data_hash.hexdigest()
+      if data_hash == chunk_hash:
+         self.save_hashes=True
+         self.hash_obj[chunk]=data_hash
+         target_file.write(chunk_data)
+      else:
+         raise Exception(f"patch_chk: received data and target hash do not match! Fatal.")
+      
+      if close_file == True:
+         target_file.close()
+
+   def apply_stats(self, *, stats=False):
+
+      if stats != False:
+         with open(self.inputfile,"r+b") as target_file:
+            target_file.truncate(stats.st_size)
+
+         # apply/update metadata
+         os.chown(self.inputfile,stats.st_uid,stats.st_gid)
+         os.utime(self.inputfile,ns=(stats.st_atime_ns,stats.st_mtime_ns))
+
    def patch(self, *, delta_file=False):
 
       if delta_file == False:
@@ -399,22 +444,12 @@ class FileHasher():
             with open(self.inputfile, 'r+b') as target_file:
                for idx in patch_chk_list:
                   chk_data=patch_data_file.read(self.chunk_size)
-                  target_file.seek(idx * self.chunk_size)
-                  data=hashlib.sha256(chk_data)
-                  # convert to string
-                  self.hash_obj[idx]=data.hexdigest()
-                  # TODO: compare the local calc with the sent to confirm data is right!
+                  self.patch_chk(chunk=idx,chunk_data=chk_data,chunk_hash=patch_data["mismatch_idx_hashes"][idx])
                   print(f"  - patch chk {idx} send[{self.hash_obj[idx]}] remote["+patch_data["mismatch_idx_hashes"][idx]+"]")
-                  self.save_hashes=True
-                  target_file.write(chk_data)
-
-               # truncate to given size
-               print(f"- truncate to "+str(patch_data["stats"].st_size)+".")
-               target_file.truncate(patch_data["stats"].st_size)
 
          # apply/update metadata
-         os.chown(self.inputfile,patch_data["stats"].st_uid,patch_data["stats"].st_gid)
-         os.utime(self.inputfile,ns=(patch_data["stats"].st_atime_ns,patch_data["stats"].st_mtime_ns))
+         print(f"- truncate to "+str(patch_data["stats"].st_size)+".")
+         self.apply_stats(stats=patch_data["stats"])
 
          print(f"- Done.")
          self._refresh_inputfile_stats()
@@ -513,7 +548,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.13"
+version="1.0.14"
 
 if args.version == True:
    print(f"{version}")
@@ -535,29 +570,35 @@ elif args.remote_patching == True:
    import paramiko
    ssh = paramiko.SSHClient()
    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-   ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
-   ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
+   if args.remote_password == False:
+      pkey = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
+      ssh.connect(args.remote_hostname, username=args.remote_username, pkey=pkey, look_for_keys=False)
+   else:
+      ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
+   ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("/home/loc_adm/Syncthing/src/avahi-backup/filehasher.py --version")
    remote_version=ssh_stdout.readline().strip()
    if remote_version == version:
       with open(FH.hashfile,"rb") as handle:
-         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("/home/loc_adm/Syncthing/src/avahi-backup/filehasher.py --inputfile "+args.remote_src_filename+" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
          ssh_stdin.write(handle.read())
 
-         import base64
-         # read first pickle
-         length=ssh_stdout.readline().strip()
-         data=ssh_stdout.read(int(length))
-         patch_data=pickle.loads(base64.b64decode(data))
-         print(patch_data)
+         patch_data=FH.receive_msg(pipe=ssh_stdout)
+         #print(patch_data)
          
-         length=ssh_stdout.readline().strip()
-         data=ssh_stdout.read(int(length))
-         data=pickle.loads(base64.b64decode(data))
-         print(data)
+         loop=True
+         while loop:
 
-         print(ssh_stdout.readline())
-         print(ssh_stdout.read())
-         print(ssh_stderr.read())
+            # read next
+            data=FH.receive_msg(pipe=ssh_stdout)
+
+            if data["type"] == "chunk":
+               print(f"chunk - "+str(data["chunk"]))
+               FH.patch_chk(chunk=data["chunk"],chunk_data=data["chunk_data"],chunk_hash=data["chunk_hash"])
+            else:
+               loop=False
+
+         FH.apply_stats(stats=patch_data["stats"])
+
    else:
       raise Exception("local and remote version do not match")
 
