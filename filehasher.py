@@ -268,7 +268,7 @@ class FileHasher():
          }
          send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
          print(f"{len(send_data)}")
-         print(f"{send_data}")
+         sys.stdout.write(send_data)
          
 
       # load hashfile to verify against.
