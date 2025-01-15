@@ -356,14 +356,11 @@ class FileHasher():
          # loads and checks, version + chunk_size
          patch_data=self.load_hash(hashfile=delta_file+".hash",extended_tests=False,type_patch_file=True)
          
-         # TODO: stats.
-
          patch_chk_list=patch_data["mismatch_idx"]
          print(f"- {len(patch_chk_list)} chunks to patch...")
 
          with open(delta_file, 'rb') as patch_data_file:
             with open(self.inputfile, 'r+b') as target_file:
-               # TODO: truncate to size.
                for idx in patch_chk_list:
                   chk_data=patch_data_file.read(self.chunk_size)
                   target_file.seek(idx * self.chunk_size)
@@ -378,6 +375,10 @@ class FileHasher():
                # truncate to given size
                print(f"- truncate to "+str(patch_data["stats"].st_size)+".")
                target_file.truncate(patch_data["stats"].st_size)
+
+         # apply/update metadata
+         os.chown(self.inputfile,patch_data["stats"].st_uid,patch_data["stats"].st_gid)
+         os.utime(self.inputfile,ns=(patch_data["stats"].st_atime_ns,patch_data["stats"].st_mtime_ns))
 
          print(f"- Done.")
          self._refresh_inputfile_stats()
@@ -397,10 +398,17 @@ class FileHasher():
 
       self.loaded_hash_error="-"
       if hashfile != False:
-         self.debug(type="INFO:load_hash",msg="Loading hashfile cwd["+os.getcwd()+"]"+hashfile)
-         if os.path.isfile(hashfile):
+         data=False
+         if hashfile == "-":
+            # stdin is used
+            self.debug(type="INFO:load_hash",msg="Loading hashfile from stdin")
+            data=pickle.load(sys.stdin.buffer)
+         elif os.path.isfile(hashfile):
+            self.debug(type="INFO:load_hash",msg="Loading hashfile cwd["+os.getcwd()+"]"+hashfile)
             with open(hashfile, 'rb') as handle:
                data = pickle.load(handle)
+                  
+         if data != False:
             
             try:
                # check version
@@ -469,7 +477,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.11"
+version="1.0.12"
 
 if args.version == True:
    print(f"{version}")
