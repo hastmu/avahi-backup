@@ -267,9 +267,10 @@ class FileHasher():
             "chunk_size": self.chunk_size,
          }
          send_data=pickle.dumps(patch_data, protocol=pickle.HIGHEST_PROTOCOL)
+         import base64
+         send_data=base64.base64(send_data).decode()
          print(f"{len(send_data)}")
-         sys.stdout.write(send_data)
-         
+         print(send_data)
 
       # load hashfile to verify against.
       verify=self.load_hash(hashfile=hash_filename,extended_tests=False)
