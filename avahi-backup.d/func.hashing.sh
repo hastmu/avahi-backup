@@ -116,6 +116,7 @@ function hash.transfer_remote_file() {
       # 1.2. check remote version
       if remote.hasher.version "${4}"
       then
+         export FILEHASHER_SKIP_VERSION=1
 #        echo "- version match"
          # 2. copy hash to remote - done via stdin
          # 3. gen patch set
