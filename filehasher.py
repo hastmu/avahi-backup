@@ -580,7 +580,7 @@ elif args.remote_patching == True:
    if os.environ.get("FILEHASHER_SKIP_VERSION",False) == False:
       ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
       remote_version=ssh_stdout.readline().strip()
-   else
+   else:
       remote_version=version
 
    if remote_version == version:
