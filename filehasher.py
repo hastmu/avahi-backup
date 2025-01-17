@@ -32,7 +32,7 @@ group.add_argument("--hashfile", help="define which hashfile is used",default=Fa
 group = parser.add_argument_group('Verifying...')
 group.add_argument("--verify-against", help="hashed which should be verified for matching", type=str, default=False)
 group.add_argument("--delta-file", help="store deltas to this file for patching", type=str, default=False)
-group.add_argument("--remote-delta", action='store_true', help="sents delta for remote-patching")
+group.add_argument("--remote-delta", action='store_true', help="sent delta for remote-patching")
 group.add_argument("--chunk-limit", help="limit written deltas per run", type=int, default=False)
 group = parser.add_argument_group('Patching...')
 group.add_argument("--apply-delta-file", help="patches the inputfile with the content of the delta file", type=str, default=False)
@@ -58,7 +58,7 @@ import signal
 import sys
 import base64
 
-def sigterm_handler(_signo, _stack_frame):
+def sigterm_handler(signal, _stack_frame):
     # Raises SystemExit(0):
     sys.exit(0)
 
@@ -571,8 +571,8 @@ elif args.remote_patching == True:
    ssh = paramiko.SSHClient()
    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
    if args.remote_password == False:
-      pkey = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
-      ssh.connect(args.remote_hostname, username=args.remote_username, pkey=pkey, look_for_keys=False)
+      private_key = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
+      ssh.connect(args.remote_hostname, username=args.remote_username, pkey=private_key, look_for_keys=False)
    else:
       ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
    
