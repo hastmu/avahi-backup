@@ -1,3 +1,4 @@
+# shellcheck disable=SC2148
 
 #
 # (c) 2024 by hastmu
@@ -75,6 +76,7 @@ function hash.remote_file() {
    # $3 ... inputfile
    # $4 ... WIP where to store hashes
    local -i stat
+   # shellcheck disable=SC2034
    HASH_DATA["${3}"]="${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${3//\//_}"
    output "# input[$3:$2]"
    timeout "$1" filehasher.py "--min-chunk-size=$2" \
@@ -142,7 +144,5 @@ function hash.transfer_remote_file() {
       return 1
    fi
 
-   # dev fallback
-   return 5
 }
 
