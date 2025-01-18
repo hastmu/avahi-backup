@@ -490,12 +490,12 @@ class FileHasher():
                   target_version=self.patch_file_version
 
                if data["version"] != target_version:
-                  self.debug(type="INFO:load_hash",msg="version mismatch self["+str(target_version)+"] file["+data["version"]+"]")
+                  self.debug(type="INFO:load_hash",msg="version mismatch self["+str(target_version)+"] file["+str(data["version"])+"]")
                   self.loaded_hash_error="not-loaded(version)"
                   return False
                # check chunk_size
                if data["chunk_size"] != self.chunk_size:
-                  self.debug(type="INFO:load_hash",msg="chunk_size mismatch self["+str(self.chunk_size)+"] file["+data["chunk_size"]+"]")
+                  self.debug(type="INFO:load_hash",msg="chunk_size mismatch self["+str(self.chunk_size)+"] file["+str(data["chunk_size"])+"]")
                   self.loaded_hash_error="not-loaded(wrong chunk-size)"
                   return False
                
@@ -503,12 +503,12 @@ class FileHasher():
                if extended_tests == True:
                   # check if size matches
                   if data["size"] != self.inputfile_stats.st_size:
-                     self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.size)+"] file["+data["size"]+"]")
+                     self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.size)+"] file["+str(data["size"])+"]")
                      self.loaded_hash_error="not-loaded(wrong-size)"
                      return False
                   # check mtime
                   if data["mtime"] != self.inputfile_stats.st_mtime:
-                     self.debug(type="INFO:load_hash",msg="mtime mismatch self["+str(self.inputfile_stats.st_mtime)+"] file["+data["mtime"]+"]")
+                     self.debug(type="INFO:load_hash",msg="mtime mismatch self["+str(self.inputfile_stats.st_mtime)+"] file["+str(data["mtime"])+"]")
                      self.loaded_hash_error="not-loaded(wrong-mtime)"
                      return False
                   # check filename
@@ -539,6 +539,7 @@ class FileHasher():
          data["version"]=self.chunk_file_version
          data["hashes"]=self.hash_obj
          data["chunk_size"]=self.chunk_size
+         self._refresh_inputfile_stats()
          data["mtime"]=self.inputfile_stats.st_mtime
          data["size"]=self.inputfile_stats.st_size
          
