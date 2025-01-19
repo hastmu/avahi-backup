@@ -60,7 +60,7 @@ import base64
 
 def sigterm_handler(signal, _stack_frame):
     # Raises SystemExit(0):
-    sys.exit(0)
+    sys.exit(2)
 
 signal.signal(signal.SIGTERM, sigterm_handler)
 
@@ -549,7 +549,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.14"
+version="1.0.15"
 
 if args.version == True:
    print(f"{version}")
