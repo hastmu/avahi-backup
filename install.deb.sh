@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # defaults
 BRANCH="${BRANCH:=main}"
 NAME="avahi-backup"
