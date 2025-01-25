@@ -549,7 +549,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.16"
+version="1.0.17"
 
 if args.version == True:
    print(f"{version}")
@@ -591,7 +591,12 @@ elif args.remote_patching == True:
 
          patch_data=FH.receive_msg(pipe=ssh_stdout)
          #print(patch_data)
-         FH.apply_stats(stats=patch_data["stats"])
+         if patch_data["type"] == "metadata":
+            FH.apply_stats(stats=patch_data["stats"])
+         else:
+            print(patch_data)
+            raise Exception("no metadata sent")
+            exit(1)
 
          loop=True
          while loop:
@@ -605,7 +610,12 @@ elif args.remote_patching == True:
             else:
                loop=False
 
-         FH.apply_stats(stats=patch_data["stats"])
+         if patch_data["type"] == "metadata":
+            FH.apply_stats(stats=patch_data["stats"])
+         else:
+            print(patch_data)
+            raise Exception("no metadata sent")
+            exit(1)
 
    else:
       raise Exception("local and remote version do not match")
