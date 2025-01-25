@@ -549,7 +549,7 @@ class FileHasher():
       
       self.feedback()
 
-version="1.0.15"
+version="1.0.16"
 
 if args.version == True:
    print(f"{version}")
@@ -591,7 +591,8 @@ elif args.remote_patching == True:
 
          patch_data=FH.receive_msg(pipe=ssh_stdout)
          #print(patch_data)
-         
+         FH.apply_stats(stats=patch_data["stats"])
+
          loop=True
          while loop:
 
@@ -652,4 +653,4 @@ else:
    else:
       raise Exception("Unknown execution mode")
 
-exit(0)
+#exit(0)
