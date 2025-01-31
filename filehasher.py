@@ -477,7 +477,13 @@ class FileHasher():
          elif os.path.isfile(hashfile):
             self.debug(type="INFO:load_hash",msg="Loading hashfile cwd["+os.getcwd()+"]"+hashfile)
             with open(hashfile, 'rb') as handle:
-               data = pickle.load(handle)
+               try:
+                  data = pickle.load(handle)
+               except:
+                  self.debug(type="INFO:load_hash",msg="unpickling of data failed.")
+                  self.loaded_hash_error="not-loaded(unpickling)"
+                  return False
+
                   
          if data != False:
             
