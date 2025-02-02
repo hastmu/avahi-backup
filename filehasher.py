@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser("filehasher")
 parser.add_argument("--version", action='store_true', help="show version and exit")
 parser.add_argument("--debug", action='store_true', help="enable debug messages")
 parser.add_argument("--report-used-hashfile", action='store_true', help="reports used hashfile and exits.")
+parser.add_argument("--thread-mode", help="0=no-threading, 1=read+hash threading, 2=hash threading", type=int, default=0)
 
 group = parser.add_argument_group('Hashing...')
 group.add_argument("--inputfile", help="file which should be hashed.", type=str, default=False)
@@ -57,6 +58,7 @@ def save_hash_file():
 import signal
 import sys
 import base64
+import threading
 
 def sigterm_handler(signal, _stack_frame):
     # Raises SystemExit(0):
@@ -148,6 +150,8 @@ class FileHasher():
    def __init__(self,* , inputfile=False, hashfile=False, chunk_size=8192, hash_method="flat", debug=False):
 
       # defaults
+      self.lock_reading=threading.Lock()
+      self.lock_update_idx=threading.Lock()
       self.hash_obj={}
       self.mtime=0
       self.save_hashes=False
@@ -207,7 +211,21 @@ class FileHasher():
       self.mtime=self.inputfile_stats.st_mtime
       # print(self.inputfile_stats)
 
-   def _read_file_in_chunks(self,file_object,chunk_size=8192):
+   def _read_one_chunk(self,file_object,chunk_size=8192,seek_chunk=False):
+
+      self.lock_reading.acquire()
+      if seek_chunk != False:
+         file_object.seek(seek_chunk*chunk_size)
+
+      data = file_object.read(chunk_size)
+      self.lock_reading.release()
+      return bytes(data)
+
+   def _read_file_in_chunks(self,file_object,chunk_size=8192,seek_chunk=False):
+
+      if seek_chunk != False:
+         file_object.seek(seek_chunk*chunk_size)
+
       while True:
          data = file_object.read(chunk_size)
          if not data:
@@ -220,7 +238,32 @@ class FileHasher():
       # convert to string
       self.hash_obj[self.chk]=data.hexdigest()
 
-   def hash_file(self, *, incremental=True):
+   def hashing_thread(self, *, filehandle=False, chunk=False):
+
+      if chunk != False:
+         piece=self._read_one_chunk(filehandle,self.chunk_size,seek_chunk=chunk)
+#         read_speed.update_run(self.chunk_size)
+         # hash
+         data=hashlib.sha256(piece)
+         # convert to string
+         self.lock_update_idx.acquire()
+         self.hash_obj[chunk]=data.hexdigest()
+         self.lock_update_idx.release()
+      pass
+
+   def hashing_thread_hashing(self, *, piece=False,chunk=False):
+
+      if chunk != False:
+         # hash
+         data=hashlib.sha256(piece)
+         # convert to string
+#         self.lock_update_idx.acquire()
+         self.hash_obj[chunk]=data.hexdigest()
+#         self.lock_update_idx.release()
+      pass
+
+
+   def hash_file(self, *, incremental=True,threading_mode=0):
       # update stats
       self._refresh_inputfile_stats()
       # hash
@@ -238,14 +281,52 @@ class FileHasher():
 
          read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
 
-         for piece in self._read_file_in_chunks(f,self.chunk_size):
+
+         if threading_mode == 0:
+            # non-threading mode
             self.save_hashes=True
-            read_speed.update_run(self.chunk_size)
-            # hash
-            data=hashlib.sha256(piece)
-            # convert to string
-            self.hash_obj[self.chk]=data.hexdigest()
-            self.chk=self.chk+1
+            for piece in self._read_file_in_chunks(f,self.chunk_size):
+               read_speed.update_run(self.chunk_size)
+               # hash
+               data=hashlib.sha256(piece)
+               # convert to string
+               self.hash_obj[self.chk]=data.hexdigest()
+               self.chk=self.chk+1
+         
+         elif threading_mode == 1:
+            # read + hash threading
+            self.save_hashes=True
+            while self.chk <= self.max_chk:
+               print(f"theads {threading.active_count()}\r")
+               while threading.active_count() > 20:
+                  time.sleep(0.100)
+               print(f"chunk {self.chk}/{self.max_chk}")
+               T=threading.Thread(target=self.hashing_thread,kwargs={"filehandle":f, "chunk": self.chk})
+               T.start()
+               self.chk=self.chk+1
+            while threading.active_count() > 1:
+               time.sleep(0.1)
+
+         else:
+            # only hashing
+            # non-threading mode
+            for piece in self._read_file_in_chunks(f,self.chunk_size):
+               self.save_hashes=True
+               read_speed.update_run(self.chunk_size)
+               # hash
+               a=threading.active_count()
+               while a > 10:
+                  print("blocked...")
+                  time.sleep(0.100)
+                  a=threading.active_count()
+
+               T=threading.Thread(target=self.hashing_thread_hashing,kwargs={"piece":piece, "chunk": self.chk})
+               T.start()
+
+               self.chk=self.chk+1
+            
+
+
       print(f"\33[2K\r",end='\r')
 
    def send_msg(self, *, type=False, data={}):
@@ -639,9 +720,9 @@ else:
    if args.verify_against == False and args.apply_delta_file == False:
       # normal hashing 
       if args.force_refresh == True:
-         FH.hash_file(incremental=False)
+         FH.hash_file(incremental=False,threading_mode=args.thread_mode)
       else:
-         FH.hash_file(incremental=True)
+         FH.hash_file(incremental=True,threading_mode=args.thread_mode)
 
       # feedback via exit code if there was a hash update.
       if FH.save_hashes == True:
