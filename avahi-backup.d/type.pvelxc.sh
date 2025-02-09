@@ -82,39 +82,43 @@ function type.pvelxc.check.preflight() {
    # pre-flight check return != 0 will not execute perform.backup
    local -i error_count=0
    local -i stat=0
+   local -A STATUS={}
    # first check - stopping hour?
-   declare -p RUNTIME
-   declare -p RUNTIME_ITEM
-   declare -p RUNTIME_NODE
+   #declare -p RUNTIME
+   #declare -p RUNTIME_ITEM
+   #declare -p RUNTIME_NODE
    local hour="$(date +%H)"
    local t_hour=${RUNTIME_ITEM["stop_hours"]:=5}
    local h_item=""
-   local -i h_match=0
+   STATUS["stop_hour_match"]=0
    for h_item in ${t_hour//,/ }
    do
       if [ ${h_item} -eq ${hour} ]
       then
-         h_match=1
+         STATUS["stop_hour_match"]=1
          break
       fi
    done
-   if [ $h_match -eq 1 ] || [ ${RUNTIME_ITEM["pvelxc"]} -eq 1100000 ]
+
+   # second check - pvelxc exists
+   if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" >> /dev/null 2>&1
    then
+      STATUS["lxc_status"]=1
+      RUNTIME_ITEM["lxc_status"]="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" | awk '{ print $2 }')"
+#      output "- LXC[${RUNTIME_ITEM["pvelxc"]}] exists status[${RUNTIME_ITEM["lxc_status"]}]"
+      stat=0
+   else
+      STATUS["lxc_status"]=0
+      SUMMARY[${#SUMMARY[@]}]="S.PVELXC: WARNING ${RUNTIME["BACKUP_HOSTNAME"]} LXC[${RUNTIME_ITEM["pvelxc"]}] does not exist or node vanished."
+      stat=1
+   fi
+   error_count=$(( error_count + stat ))
+
+   if [ ${STATUS["stop_hour_match"]} -eq 1 ] || [ "${RUNTIME_ITEM["lxc_status"]}" == "stopped" ]
+   then
+      output "- LXC[${RUNTIME_ITEM["pvelxc"]}] exists status[${RUNTIME_ITEM["lxc_status"]}] STOP_HOURS[${t_hour}=?${hour}] -> backup"
       # stop hours match
       stat=0
-      output "- STOP_HOURS[${t_hour}] - CURRENT[${hour}] - MATCH"
-
-      # second check - pvelxc exists
-      if ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" >> /dev/null 2>&1
-      then
-         RUNTIME_ITEM["lxc_status"]="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct status "${RUNTIME_ITEM["pvelxc"]}" | awk '{ print $2 }')"
-         output "- LXC[${RUNTIME_ITEM["pvelxc"]}] exists status[${RUNTIME_ITEM["lxc_status"]}]"
-         stat=0
-      else
-         output "- LXC[${RUNTIME_ITEM["pvelxc"]}] does not exist or node vanished."
-         stat=1
-      fi
-      error_count=$(( error_count + stat ))
 
       # check filehasher version
       local local_version
@@ -134,35 +138,28 @@ function type.pvelxc.check.preflight() {
       error_count=$(( error_count + ${RUNTIME_NODE["filehasher.remote_version.stat"]} ))
 
    else
+      output "- LXC[${RUNTIME_ITEM["pvelxc"]}] exists status[${RUNTIME_ITEM["lxc_status"]}] STOP_HOURS[${t_hour}=?${hour}] -> local hashing..."
       # out of stop hours
       _PVELXC["skip_counter"]=$(( ${_PVELXC["skip_counter"]:0} + 1 ))
       stat=1
-      output "- STOP_HOURS[${t_hour}] - CURRENT[${hour}] - UNMATCH - skipping"
       # refresh hashes
-      ls -alh "${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
-      filehasher.py --version
       # TODO: make this check the exit status of hasher if update of hashes took place or not
       #       in order to know if the full file was hashed.
       # TODO: adapt timeout ? maybe a good way, on the other hand low frequency backups would have no need.
       local item=""
+      local -a TO_CACHE
+      #mapfile TO_CACHE <(find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw")
+      declare -p TO_CACHE
+
       for item in $(find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}" -name "*.raw")
       do
-         if hash.local_file "30s" "${_PVELXC["cfg.min-chunk-size"]}" "${item}"
+         if hash.local_file "10s" "${_PVELXC["cfg.min-chunk-size"]}" "${item}"
          then
             _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
          else
             SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} ${RUNTIME_ITEM["pvelxc"]} local hash updating ${item}"
             _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
          fi
-
-#         timeout 30s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" --inputfile "${item}"
-#         if [ $? -eq 0 ]
-#         then
-#            _PVELXC["summary.hash.up-to-date"]=$(( ${_PVELXC["summary.hash.up-to-date"]} + 1 ))
-#         else
-#            SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} ${RUNTIME_ITEM["pvelxc"]} local hash updating ${item}"
-#            _PVELXC["summary.hash.updating"]=$(( ${_PVELXC["summary.hash.updating"]} + 1 ))
-#         fi
       done
    fi
    error_count=$(( error_count + stat ))
@@ -179,68 +176,63 @@ function type.pvelxc.perform.backup() {
    if [ "${RUNTIME_ITEM["lxc_status"]}" == "running" ]
    then
       lxc_restart=1
-      output "- shutting down lxc..."
+      output "- shutting down lxc..." | tee -a "${RUNTIME_ITEM["logfile"]}"
       ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct shutdown "${RUNTIME_ITEM["pvelxc"]}"
    fi
    # get config
-   output "- target dir: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
-   output "  - get lxc config (pct config)"
+   output "- target dir: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}" | tee -a "${RUNTIME_ITEM["logfile"]}"
+   output "  - get lxc config (pct config)" | tee -a "${RUNTIME_ITEM["logfile"]}"
    ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct config "${RUNTIME_ITEM["pvelxc"]}" > "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/lxc.config"
    # get storage config
    if [ -z "${RUNTIME_NODE["pve.storage"]}" ]
    then
-      output "  - fetching storage config..."
+      output "  - fetching storage config..." | tee -a "${RUNTIME_ITEM["logfile"]}"
       eval $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm status | grep " active " | awk '{ printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage." $1,$2) } END { printf("RUNTIME_NODE[%s]=\"%s\"; \n","pve.storage","done")}')
    fi
 
    # backup storage items
    local storage_item=""
    local storage_path=""
-   output "  - backup storage items..."
+   output "  - backup storage items..." | tee -a "${RUNTIME_ITEM["logfile"]}"
    # TODO: pct df always changes the volume.
    for storage_item in $(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pct df "${RUNTIME_ITEM["pvelxc"]}" | grep -E "(^rootfs|^mp)" | awk '{ print $2 }')
    do
       if [ -z "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" ]
       then
-         output "    - storage item: ${storage_item} -> no storage config"
+         output "    - storage item: ${storage_item} -> no storage config" | tee -a "${RUNTIME_ITEM["logfile"]}"
       else
-         output "    - storage item: ${storage_item} -> ${storage_item%%:*} type[${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}]"
+         output "    - storage item: ${storage_item} -> ${storage_item%%:*} type[${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}]" | tee -a "${RUNTIME_ITEM["logfile"]}"
          storage_path="$(ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" pvesm path "${storage_item}")"
          ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" ls -lah "${storage_path}"
-         output "      path: ${storage_path}"
+         output "      path: ${storage_path}" | tee -a "${RUNTIME_ITEM["logfile"]}"
          # copy
          trg="${storage_item//\//_}"
          if [ "${RUNTIME_NODE["pve.storage.${storage_item%%:*}"]}" == "dir" ]
          then
-            output "      log: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt" 
+            output "      log: ${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"  | tee -a "${RUNTIME_ITEM["logfile"]}"
             s_time=$(date +%s)
-            if [ 1 -eq 0 ]
-            then
-               # rsync way
-               output "      backup_name: ${trg} ... rsyncing..."
-               rsync.file "${RUNTIME["BACKUP_HOSTNAME"]}:${storage_path}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/log.${trg}.txt"
-            fi
             if [ 1 -eq 1 ]               
             then
-               output "      backup_name: ${trg} ... filehasher..."
+               output "      backup_name: ${trg} ... filehasher..." | tee -a "${RUNTIME_ITEM["logfile"]}"
                # filehasher way
                # check local hashs
                # TODO: change back to 10s
-               timeout 10s filehasher.py "--min-chunk-size=${_PVELXC["cfg.min-chunk-size"]}" \
-                              --inputfile "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" >> /dev/null
-               stat=$?
-
-               if [ ${stat} -eq 0 ]
+               if [ ! -e "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" ]
                then
-                  output "      - local hashes up-to-date"
-               elif [ ${stat} -eq 1 ]
-               then
-                  output "      - local hashes got updated."
-               else
-                  output "      ! local hashes are not up-to-date."
-                  SUMMARY[${#SUMMARY[@]}]="S.PVELXC: ${RUNTIME["BACKUP_HOSTNAME"]} - ${RUNTIME_ITEM["pvelxc"]}:${trg} - not up-to-date file hashes - skipped"
-                  return 1
+                  # create new empty file
+                  touch "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}"
                fi
+
+               # new hash lib function
+               hash.transfer_remote_file \
+                  "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${trg}" \
+                  "$(( 8 * 1024 * 1024 ))" \
+                  "${storage_path}" \
+                  "${RUNTIME["BACKUP_HOSTNAME"]}"
+                  # >> "${RUNTIME_ITEM["logfile"]}" 2>&1
+
+               if [ 1 -eq 0 ]
+               then
 
                # copy local hash to remote and trigger compare
                local local_hash_file=""
@@ -281,6 +273,7 @@ function type.pvelxc.perform.backup() {
                   output "      - no delta - no patching."
                fi
                ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" rm -Rf "${T_DIR}"
+               fi
             fi
             e_time=$(date +%s)
             output "      took: $(( e_time - s_time )) sec. / $(( (e_time - s_time)/60 )) min."
@@ -302,7 +295,7 @@ function type.pvelxc.perform.backup() {
    fi
    # end
    # mark broken for dev.
-   stat=1
+   #stat=1
    return ${stat}
 }
 

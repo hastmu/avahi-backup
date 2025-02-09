@@ -99,9 +99,6 @@ function type.path.perform.backup() {
    output "- target:     ${RUNTIME_ITEM["zfs.subvol.target.dir"]}"
    output "- RSYNC_ARGS: ${RUNTIME["RSYNC_ARGS"]}"
       
-   # TODO: check if there is an options to detect which sub-stage failed last time
-   output "- syncing...up to 1GB files..."
-
 # TODO: think about symlinks in src tree.
 #--links, -l              copy symlinks as symlinks
 #--copy-links, -L         transform symlink into referent file/dir
@@ -112,44 +109,55 @@ function type.path.perform.backup() {
 #--keep-dirlinks, -K      treat symlinked dir on receiver as dir
 #--omit-link-times, -J    omit symlinks from --times
 
-
-   timeout -s INT 10m rsync -e "ssh -i .ssh/backup" \
-      ${RUNTIME["RSYNC_ARGS"]} --max-size=$(( 1 * 1024 * 1024 * 1024)) -i \
-      -av --bwlimit=40000 --delete --exclude="lost+found" \
-      --info=progress2 --stats --inplace --partial \
-      "${src}/." \
-      "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." 2>&1 \
-      | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
-      | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
-
-   # shellcheck disable=SC2046
-   eval local -A pstat=$(declare -p PIPESTATUS | cut -d= -f2-)
-   echo ""
-#   declare -p pstat
-
-   if [ "${pstat[0]}" -ne 0 ]
+   if age.of.file.older.than "${RUNTIME_ITEM["logname.base"]}.stage1" $(( 24 * 60 * 60 ))
    then
-      touch "$0.log"
-      touch "${RUNTIME_ITEM["logname.base"]}.error"
-      echo "RSYNC-ERROR: ${src} - ${RUNTIME_ITEM["logfile"]}" >> $0.log
+      output "- stage 1: rsync <1GB ..."
+
+      timeout -s INT 10m rsync -e "ssh -i .ssh/backup" \
+         ${RUNTIME["RSYNC_ARGS"]} --max-size=$(( 1 * 1024 * 1024 * 1024)) -i \
+         -av --bwlimit=40000 --delete --exclude="lost+found" \
+         --info=progress2 --stats --inplace --partial \
+         "${src}/." \
+         "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." 2>&1 \
+         | tee "${RUNTIME_ITEM["logfile"]}" | stdbuf -i0 -o0 -eL tr "\r" "\n" \
+         | stdbuf -i0 -oL -eL grep -- "-chk=" |  stdbuf -i0 -o0 -eL tr "\n" "\r"
+
+      # shellcheck disable=SC2046
+      eval local -A pstat=$(declare -p PIPESTATUS | cut -d= -f2-)
       echo ""
-      output "! RSYNC Error - schedule again - fix the issue. backup runs at any cycle again."
-      stat=1
-      SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} <=1GB had issues"
+   #   declare -p pstat
+
+      if [ "${pstat[0]}" -ne 0 ]
+      then
+         touch "$0.log"
+         touch "${RUNTIME_ITEM["logname.base"]}.error"
+         echo "RSYNC-ERROR: ${src} - ${RUNTIME_ITEM["logfile"]}" >> $0.log
+         echo ""
+         output "! RSYNC Error - schedule again - fix the issue. backup runs at any cycle again."
+         stat=1
+         SUMMARY[${#SUMMARY[@]}]="B.BACKUP-ERROR:${src} <=1GB had issues"
+      else
+         touch "${RUNTIME_ITEM["logname.base"]}.stage1"
+         echo ""
+      fi
    else
-      echo ""
+      output "- stage 1: rsync <1GB was completed successful within the last 24h"
    fi
 
    # find files > 1GB to build infiles
-   output "- file listing >=1G files..."
-   large_file_tmp="$(mktemp)"
+   output "- stage 2: rsync >=1GB ..."
+
    # remote large files
+   output "  - get remote large file list..."
+   large_file_tmp="$(mktemp)"
    ssh.cmd "${RUNTIME["BACKUP_HOSTNAME"]}" find "${RUNTIME_ITEM["path"]}/." -size +$(( 1 * 1024 * 1024 * 1024 - 1 ))c -printf \"%P\\n\" \
    >> "${large_file_tmp}"
    item_max=$(wc -l < "${large_file_tmp}")
    local -a FLIST
    mapfile -t FLIST < "${large_file_tmp}"
+
    # local large files
+   output "  - get local large file list..."
    find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." -size +$(( 1 * 1024 * 1024 * 1024 - 1 ))c -printf "%P\n" \
    > "${large_file_tmp}"
    local_item_max=$(wc -l < "${large_file_tmp}")
@@ -157,86 +165,35 @@ function type.path.perform.backup() {
    mapfile -t LLIST < "${large_file_tmp}"
    # report
    output "- found large files local[#${local_item_max}] remote[#${item_max}]"
-   local -A LLLIST
-   for item in "${LLIST[@]}"
-   do
-      echo "- item: ${item}"
-      LLLIST["${item}"]=1
-   done
    rm -f "${large_file_tmp}"
 
-   output "- rsyncing...>1GB files..."
+   output "  - delta syncing..."
    # build local hashes...
    local -i count=0
    local -i s_time=0
    s_time=$(date +%s)
    local -i e_time=0
    local -i item_count=0
-   local -i item_max=0
+   local -i item_max=${#FLIST[@]}
    local -i hstat=0
    local -i time_left=600
-
-
    local -a HASHED_FILES
-
-   for LINE in "${FLIST[@]}"
-   do
-      # remove from local list
-      unset "LLLIST[${LINE}]"
-      output "  - local hashing scanned[${count}] item[${item_count}/${item_max}] time left[${time_left} sec]"
-      if [ ! -e "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${LINE}" ]
-      then
-         # create it if it is a new file
-         touch "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${LINE}"
-      fi
-
-      # as the number is quite high we shorten the runtime to 1m and max of 10 files
-      # TODO: output to log
-      hash.local_file "1m" "$(( 8 * 1024 * 1024 ))" "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${LINE}" >> "${RUNTIME_ITEM["logfile"]}" 2>&1
-      hstat=$?
-      stat=$(( stat + ${hstat} ))
-      if [ ${hstat} -ne 0 ]
-      then
-         count=$(( count + 1 ))
-         if [ ${count} -eq 10 ]
-         then
-            stat=$(( stat + 1 ))
-            output "  ! reached limit of 10 to hash... more next time..."
-            SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} >= 1GB more files to hash locally"
-            break
-         fi
-      else
-         HASHED_FILES[${#HASHED_FILES[@]}]="${LINE}"
-      fi
-
-      item_count=$(( item_count + 1 ))
-      e_time=$(date +%s)
-      if [ $(( e_time - s_time )) -gt $(( 10 * 60 )) ] && [ ${count} -ne 0 ]
-      then
-         # check if we exceeded 10 mins and we scanned at least one file.
-         output "- end of 10 min slot"
-         SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} >= 1GB more files to hash locally - exceeded 10 min slot"
-         break
-      else
-         time_left=$(( 600 - ( e_time - s_time ) ))
-      fi
-   done
-
-   # delete # not needed as rsync --delete also removes large files out of scope for coping
-#   for item in "${!LLLIST[@]}"
-#   do
-#      output "- deleting vanished files: ${item}"
-#      rm -fv "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}"
-#   done
+   local -i skip_last_ok=0
 
 #   # stop >1GB
-   if [ ${#HASHED_FILES[@]} -ne 0 ]
+   if [ ${#FLIST[@]} -ne 0 ]
    then
-      output "   - delta syncing..."
       local -i item_stat=0
-      for item in "${HASHED_FILES[@]}"
+      for item in "${FLIST[@]}"
       do
-         output "     ${item}"
+         count=$(( count + 1 ))
+         if hash.lastok.delta "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" $(( 24 * 60 * 60 )) >> "${RUNTIME_ITEM["logfile"]}"
+         then
+            skip_last_ok=$(( skip_last_ok + 1 ))
+            continue
+         fi
+         output "    - skipped last_ok[${skip_last_ok}] item[${count}/${item_max}], processing #${count}..."
+         output "     ${item}" >> "${RUNTIME_ITEM["logfile"]}"
          hash.transfer_remote_file \
             "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" \
             "$(( 8 * 1024 * 1024 ))" \
@@ -251,6 +208,7 @@ function type.path.perform.backup() {
             SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} large file syncing had an issue with ${item}"
          fi
       done
+      output "    - skipped last_ok[${skip_last_ok}] item[${count}/${item_max}]"
 
    fi
 
