@@ -59,6 +59,7 @@ import signal
 import sys
 import base64
 import threading
+import multiprocessing
 
 def sigterm_handler(signal, _stack_frame):
     # Raises SystemExit(0):
@@ -290,7 +291,12 @@ class FileHasher():
                # hash
                data=hashlib.sha256(piece)
                # convert to string
-               self.hash_obj[self.chk]=data.hexdigest()
+               old_hash=self.hash_obj.get(self.chk,False)
+               new_hash=data.hexdigest()
+               if old_hash == False or old_hash != new_hash:
+                  # only add and flag as updated if there is a real change.
+                  self.hash_obj[self.chk]=new_hash
+                  self.save_hashes=True
                self.chk=self.chk+1
          
          elif threading_mode == 1:
@@ -307,7 +313,7 @@ class FileHasher():
             while threading.active_count() > 1:
                time.sleep(0.1)
 
-         else:
+         elif threading_mode == 2:
             # only hashing
             # non-threading mode
             for piece in self._read_file_in_chunks(f,self.chunk_size):
@@ -324,6 +330,45 @@ class FileHasher():
                T.start()
 
                self.chk=self.chk+1
+         elif threading_mode == 3:
+            # read + hash threading
+            self.save_hashes=True
+            while self.chk <= self.max_chk:
+               a=len(multiprocessing.active_children())
+               print(f"theads {a}\r")
+               while a > 40:
+                  time.sleep(0.100)
+                  a=len(multiprocessing.active_children())
+               print(f"chunk {self.chk}/{self.max_chk}")
+               T=multiprocessing.Process(target=self.hashing_thread,kwargs={"filehandle":f, "chunk": self.chk})
+               T.start()
+               self.chk=self.chk+1
+            while len(multiprocessing.active_children()) > 1:
+               time.sleep(0.1)
+
+         elif threading_mode == 4:
+            # only hashing
+            # non-threading mode
+            for piece in self._read_file_in_chunks(f,self.chunk_size):
+               self.save_hashes=True
+               read_speed.update_run(self.chunk_size)
+               # hash
+               a=len(multiprocessing.active_children())
+               while a > 40:
+                  print("blocked...")
+                  time.sleep(0.100)
+                  a=len(multiprocessing.active_children())
+
+               T=multiprocessing.Process(target=self.hashing_thread_hashing,kwargs={"piece":piece, "chunk": self.chk})
+               T.start()
+
+               self.chk=self.chk+1
+            for process in multiprocessing.active_children():
+               process.join()
+
+            
+         else:
+            raise Exception("threading mode unknown")
             
 
 
