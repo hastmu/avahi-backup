@@ -31,6 +31,25 @@ function lock() {
    fi
 }
 
+function age.of.file.older.than() {
+   # $1 ... file
+   # $2 ... age threshold
+
+   local -i mtime=0
+   if [ -e "${1}" ]
+   then
+      mtime=$(stat -c %Y "${1}")
+   fi
+
+   if [ ${mtime} -eq 0 ] || [ $(( $(date +%s) - mtime )) -gt ${2} ]
+   then
+      return 0
+   else
+      return 1
+   fi
+
+}
+
 # avahi-publish -s "backup-host" _backup._tcp 1111 path=/tmp path=/tmp2 path=/tmp3
 declare -A CFG
 CFG["name"]="avahi-backup"
@@ -63,6 +82,25 @@ else
       echo "${RUNTIME["output.prefix"]}${1+"$@"}"
    }
 fi
+
+function check.blacklisted.process() {
+   # do not run backups when those processes are around
+   local -a blacklist
+   blacklist[${#blacklist[@]}]="steamlink"
+   blacklist[${#blacklist[@]}]="moonlight"
+   blacklist[${#blacklist[@]}]="remote-viewer"
+
+   for item in ${blacklist[@]}
+   do
+      if pgrep ${item} >> /dev/null 2>&1
+      then 
+         output "- blacklist process[${item}] found."
+         return 0
+      fi
+   done
+   return 1
+
+}
 
 function fn_exists() { declare -F "$1" > /dev/null; }
 
@@ -415,19 +453,10 @@ backup-client) {
 
 backup) {
 
-   # do not run backups when those processes are around
-   declare -a blacklist
-   blacklist[${#blacklist[@]}]="steamlink"
-   blacklist[${#blacklist[@]}]="moonlight"
-
-   for item in ${blacklist[@]}
-   do
-      if pgrep ${item} >> /dev/null 2>&1
-      then 
-         output "- blacklist process[${item}] found. do not run."
-         exit 1
-      fi
-   done
+   if check.blacklisted.process
+   then
+      exit 1
+   fi
 
    lock server "${1+"$@"}"
 
@@ -452,6 +481,9 @@ backup) {
    RUNTIME["BACKUP_ROOT"]="$(pwd)"
    RUNTIME["BACKUP_ROOT_DATASET"]="$(zfs.get_dataset.name "${RUNTIME["BACKUP_ROOT"]}")"
    output "ZFS dataset root: ${RUNTIME["BACKUP_ROOT_DATASET"]}"
+
+   # revisit hashing queue
+   hash.revisit.queue "${RUNTIME["BACKUP_ROOT"]}/.hasher-queue"
 
    # backup root
    BROOT="$(pwd)"
@@ -512,6 +544,13 @@ backup) {
 
    for b_host in ${!AVAHI_IDX[@]}
    do
+
+      # stop backup loop when there is a blacklisted process
+      if check.blacklisted.process
+      then
+         exit 1
+      fi
+
       declare -A RUNTIME_NODE=()
 
       # [ "${b_host}" != "pve-wyse-001.local" ] && continue
@@ -646,6 +685,7 @@ backup) {
          # update subvolname
          if fn_exists "type.${RUNTIME_ITEM["type"]}.subvol.name"
          then
+            output "= PREPARE BACKUP TARGET ="
             zfs.report.usage "${RUNTIME_ITEM["zfs.subvol"]}"
             # check restore 
             create.rsync.restore.conf 
@@ -657,6 +697,7 @@ backup) {
 
             if fn_exists "type.${RUNTIME_ITEM["type"]}.perform.backup"
             then
+               output "= PERFORM BACKUP ="
                if "type.${RUNTIME_ITEM["type"]}.perform.backup"
                then
                   output "- backup successful"
