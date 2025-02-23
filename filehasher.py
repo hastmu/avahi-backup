@@ -292,13 +292,15 @@ class FileHasher():
          chunks_2_del=[]
          for chunk in list(self.chunk_buffer[cpu]):
             #print(f"- processing cpu[{cpu}] chunk[{chunk}]")
-            piece=self.chunk_buffer[cpu].get(chunk,False)
+            if read is True:
+               piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
+            else:
+               piece=self.chunk_buffer[cpu].get(chunk,False)
             if piece is not False:
                chunks_2_del.append(chunk)
-               if read is True:
-                  piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
                data=hashlib.sha256(piece)
                self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
+
          for chunk in chunks_2_del:
             del self.chunk_buffer[cpu][chunk]
          
