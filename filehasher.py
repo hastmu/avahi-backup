@@ -283,7 +283,7 @@ class FileHasher():
       else:
          self.debug(type="INFO:update_hash_idx",msg=f"- same   {chunk} with [{new_hash}]")
 
-   def hash_thread(self, *, cpu=-1):
+   def hash_thread(self, *, cpu=-1,read=False,f=False):
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - start")
 
@@ -295,6 +295,8 @@ class FileHasher():
             piece=self.chunk_buffer[cpu].get(chunk,False)
             if piece is not False:
                chunks_2_del.append(chunk)
+               if read is True:
+                  piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
                data=hashlib.sha256(piece)
                self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
          for chunk in chunks_2_del:
@@ -350,29 +352,7 @@ class FileHasher():
                   #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
                   pass
 
-         elif threading_mode == 1:
-            # read + hash threading
-
-            for chunk in range(0,self.max_chk):
-               old_data=self.hash_obj.get(chunk,False)
-               if old_data is False:
-                  # missing hash
-                  self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
-                  while threading.active_count() > 20:
-                     time.sleep(0.1)
-                  T=threading.Thread(target=self.hashing_thread,kwargs={"filehandle":f, "chunk": chunk})
-                  T.start()
-                  read_speed.update_run(self.chunk_size)
-               else:
-                  #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
-                  pass
-
-            main_T=threading.main_thread()
-            for T in threading.enumerate():
-               if T != main_T:
-                  T.join()
-
-         elif threading_mode == 2:
+         elif threading_mode == 1 or threading_mode == 2:
             # only hashing
 
             # BROKEN-doest not build all chunks.
@@ -385,7 +365,10 @@ class FileHasher():
 
             for cpu in range(0,cpu_count):
                self.chunk_buffer[cpu]={}
-               self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu})
+               if threading_mode == 1:
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu,"read":True, "f":f})
+               else:
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu,"read":False})
                self.thread[cpu].start()
 
             next_cpu=0
@@ -394,7 +377,10 @@ class FileHasher():
                if old_data is False:
                   # missing hash
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
-                  self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
+                  if threading_mode == 1:
+                     self.chunk_buffer[next_cpu][chunk]=True
+                  else:
+                     self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
                   while len(self.chunk_buffer[next_cpu]) > 1024:
                      print(f"- wait cpu[{next_cpu}]")
                      time.sleep(0.1)
