@@ -213,17 +213,20 @@ class FileHasher():
       self.mtime=self.inputfile_stats.st_mtime
       # print(self.inputfile_stats)
 
-   def _read_one_chunk(self,file_object,*, chunk_size=8192,seek_chunk=-1):
+   def _read_one_chunk(self,file_object,*, chunk_size=8192,seek_chunk=-1,lock=True):
 
       try:
-         self.lock_reading.acquire()
+         if lock is True:
+            self.lock_reading.acquire()
          if seek_chunk != -1:
             file_object.seek(seek_chunk*chunk_size)
          data = file_object.read(chunk_size)
-         self.lock_reading.release()
+         if lock is True:
+            self.lock_reading.release()
          return bytes(data)
       except:
-         self.lock_reading.release()
+         if lock is True:
+            self.lock_reading.release()
          return False
 
    def _read_file_in_chunks(self,file_object, *,chunk_size=8192,seek_chunk=-1):
@@ -283,28 +286,29 @@ class FileHasher():
       else:
          self.debug(type="INFO:update_hash_idx",msg=f"- same   {chunk} with [{new_hash}]")
 
-   def hash_thread(self, *, cpu=-1,read=False,f=False):
+   def hash_thread(self, *, cpu=-1,Read_file=False):
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - start")
 
-      while self.active is True or len(self.chunk_buffer[cpu]) > 0:
-         # process buffer
-         chunks_2_del=[]
-         for chunk in list(self.chunk_buffer[cpu]):
-            #print(f"- processing cpu[{cpu}] chunk[{chunk}]")
-            if read is True:
-               piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
-            else:
-               piece=self.chunk_buffer[cpu].get(chunk,False)
-            if piece is not False:
-               chunks_2_del.append(chunk)
-               data=hashlib.sha256(piece)
-               self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
+      with open(self.inputfile,"rb") as f:
+         while self.active is True or len(self.chunk_buffer[cpu]) > 0:
+            # process buffer
+            chunks_2_del=[]
+            for chunk in list(self.chunk_buffer[cpu]):
+               #print(f"- processing cpu[{cpu}] chunk[{chunk}]")
+               if Read_file is True:
+                  piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk,lock=False)
+               else:
+                  piece=self.chunk_buffer[cpu].get(chunk,False)
+               if piece is not False:
+                  chunks_2_del.append(chunk)
+                  data=hashlib.sha256(piece)
+                  self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
 
-         for chunk in chunks_2_del:
-            del self.chunk_buffer[cpu][chunk]
-         
-         time.sleep(0.001)
+            for chunk in chunks_2_del:
+               del self.chunk_buffer[cpu][chunk]
+            
+            time.sleep(0.001)
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - end")
       
@@ -368,9 +372,9 @@ class FileHasher():
             for cpu in range(0,cpu_count):
                self.chunk_buffer[cpu]={}
                if threading_mode == 1:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu,"read":True, "f":f})
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True})
                else:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu,"read":False})
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":False})
                self.thread[cpu].start()
 
             next_cpu=0
@@ -383,9 +387,15 @@ class FileHasher():
                      self.chunk_buffer[next_cpu][chunk]=True
                   else:
                      self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
+                  
+                  loop_count=0
                   while len(self.chunk_buffer[next_cpu]) > 1024:
-                     print(f"- wait cpu[{next_cpu}]")
+                     print(f"- wait cpu[{next_cpu}] length[{len(self.chunk_buffer[next_cpu])}]")
                      time.sleep(0.1)
+                     loop_count=+1
+                     if loop_count > 1000:
+                        raise Exception("waiting too long...")
+                        exit(1)
                   #info=""
                   min_len=False
                   for cpu in range(0,cpu_count):
