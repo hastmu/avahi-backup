@@ -246,33 +246,6 @@ class FileHasher():
       # convert to string
       self.hash_obj[self.chk]=data.hexdigest()
 
-   def hashing_thread(self, *, filehandle=False, chunk=-1):
-
-#      print(threading.get_native_id())
-      if chunk != -1:
-         self.debug(type="INFO:hashing_thread",msg=f"- chunk[{chunk}]")      
-         piece=self._read_one_chunk(filehandle,chunk_size=self.chunk_size,seek_chunk=chunk)
-         # hash
-         if piece != False:
-            data=hashlib.sha256(piece)
-            # convert to string
-            self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
-         else:
-            self.debug(type="INFO:hashing_thread",msg=f"- reading failed chunk[{chunk}]")      
-      else:
-         self.debug(type="INFO:hashing_thread",msg=f"- chunk[{chunk}] ???")      
-
-   def hashing_thread_hashing(self, *, piece=False,chunk=False):
-
-      if chunk != False:
-         # hash
-         data=hashlib.sha256(piece)
-         # convert to string
-#         self.lock_update_idx.acquire()
-         self.hash_obj[chunk]=data.hexdigest()
-#         self.lock_update_idx.release()
-      pass
-
    def update_hash_idx(self, *, chunk, new_hash):
 
       old_hash=self.hash_obj.get(chunk,False)
@@ -293,21 +266,19 @@ class FileHasher():
       with open(self.inputfile,"rb") as f:
          while self.active is True or len(self.chunk_buffer[cpu]) > 0:
             # process buffer
-            chunks_2_del=[]
             for chunk in list(self.chunk_buffer[cpu]):
                #print(f"- processing cpu[{cpu}] chunk[{chunk}]")
                if Read_file is True:
+                  self.debug(type="INFO:hash_thread",msg=f"- reading cpu[{cpu}] chunk[{chunk}] length[{len(self.chunk_buffer[cpu])}]")
                   piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk,lock=False)
                else:
+                  self.debug(type="INFO:hash_thread",msg=f"- processing cpu[{cpu}] chunk[{chunk}] length[{len(self.chunk_buffer[cpu])}]")
                   piece=self.chunk_buffer[cpu].get(chunk,False)
                if piece is not False:
-                  chunks_2_del.append(chunk)
+                  del self.chunk_buffer[cpu][chunk]
                   data=hashlib.sha256(piece)
                   self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
 
-            for chunk in chunks_2_del:
-               del self.chunk_buffer[cpu][chunk]
-            
             time.sleep(0.001)
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - end")
@@ -367,7 +338,8 @@ class FileHasher():
             self.thread={}
             self.active=True
 
-            cpu_count=multiprocessing.cpu_count()
+            max_cpu_count=multiprocessing.cpu_count()
+            cpu_count=max_cpu_count
 
             for cpu in range(0,cpu_count):
                self.chunk_buffer[cpu]={}
@@ -378,24 +350,36 @@ class FileHasher():
                self.thread[cpu].start()
 
             next_cpu=0
+            max_queue_length=32
             for chunk in range(0,self.max_chk):
                old_data=self.hash_obj.get(chunk,False)
                if old_data is False:
-                  # missing hash
+                  # missing hash - guidance or data for threads
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
                   if threading_mode == 1:
                      self.chunk_buffer[next_cpu][chunk]=True
+                     # if queue length is over the limit then reduce the active filled threads
                   else:
                      self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
-                  
+
+                  if len(self.chunk_buffer[next_cpu]) > max_queue_length:
+                     if cpu_count > 1:
+                        cpu_count=cpu_count-1
+                        print("- reduced active queues...")
+                  elif len(self.chunk_buffer[next_cpu]) < 5:
+                     if cpu_count < max_cpu_count:
+                        print("- adding active queues...")
+                        cpu_count=cpu_count+1
+
                   loop_count=0
-                  while len(self.chunk_buffer[next_cpu]) > 1024:
-                     print(f"- wait cpu[{next_cpu}] length[{len(self.chunk_buffer[next_cpu])}]")
+                  while len(self.chunk_buffer[next_cpu]) > max_queue_length:
+                     print(f"- wait loop[{loop_count}] cpu[{next_cpu}/{cpu_count}] length[{len(self.chunk_buffer[next_cpu])}]\r",end="")
                      time.sleep(0.1)
-                     loop_count=+1
+                     loop_count=loop_count+1
                      if loop_count > 1000:
                         raise Exception("waiting too long...")
                         exit(1)
+
                   #info=""
                   min_len=False
                   for cpu in range(0,cpu_count):
@@ -416,54 +400,6 @@ class FileHasher():
 
             for cpu in range(0,multiprocessing.cpu_count()):
                self.thread[cpu].join()
-
-         elif threading_mode == 3:
-            # read + hash threading
-            print("broken")
-
-            for chunk in range(0,self.max_chk):
-               old_data=self.hash_obj.get(chunk,False)
-               if old_data is False:
-                  # missing hash
-                  self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
-                  while len(multiprocessing.active_children()) > 20:
-                     time.sleep(0.1)
-                  T=multiprocessing.Process(target=self.hashing_thread,kwargs={"filehandle":f, "chunk": chunk})
-                  T.start()
-                  read_speed.update_run(self.chunk_size)
-               else:
-                  #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
-                  pass
-
-            for process in multiprocessing.active_children():
-               process.join()
-
-         elif threading_mode == 4:
-            # only hashing
-            print("broken")
-
-            for chunk in range(0,self.max_chk):
-               old_data=self.hash_obj.get(chunk,False)
-               if old_data is False:
-                  # missing hash
-                  self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
-                  piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
-
-                  while len(multiprocessing.active_children()) > 20:
-                     print("blocked...")
-                     time.sleep(0.100)
-
-                  T=multiprocessing.Process(target=self.hashing_thread_hashing,kwargs={"piece":piece, "chunk": chunk})
-                  T.start()
-
-                  read_speed.update_run(self.chunk_size)
-               else:
-                  #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
-                  pass
-
-            for process in multiprocessing.active_children():
-               process.join()
-
             
          else:
             raise Exception("threading mode unknown")
