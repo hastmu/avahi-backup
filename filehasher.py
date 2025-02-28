@@ -270,7 +270,10 @@ class FileHasher():
                #print(f"- processing cpu[{cpu}] chunk[{chunk}]")
                if Read_file is True:
                   self.debug(type="INFO:hash_thread",msg=f"- reading cpu[{cpu}] chunk[{chunk}] length[{len(self.chunk_buffer[cpu])}]")
+                  s_time=time.time_ns()
                   piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk,lock=False)
+                  self.time_avg_ns_read[cpu]=((time.time_ns()-s_time) + self.time_avg_ns_read[cpu]) / 2
+
                else:
                   self.debug(type="INFO:hash_thread",msg=f"- processing cpu[{cpu}] chunk[{chunk}] length[{len(self.chunk_buffer[cpu])}]")
                   piece=self.chunk_buffer[cpu].get(chunk,False)
@@ -380,24 +383,31 @@ class FileHasher():
                   else:
                      s_time=time.time_ns()
                      self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
-                     self.time_avg_ns_read[next_cpu]=((s_time - time.time_ns()) + self.time_avg_ns_read[next_cpu]) / 2
+                     self.time_avg_ns_read[next_cpu]=((time.time_ns()-s_time) + self.time_avg_ns_read[next_cpu]) / 2
 
                   # eval on performance and tune
                   # - get max queue length
                   current_min_queue_length=False
                   current_max_queue_length=0
+                  current_avg_read=0
                   for cpu in range(0,max_cpu_count):
+                     if current_avg_read is False:
+                        current_avg_read=self.time_avg_ns_read[cpu]
+                     else:
+                        current_avg_read=(self.time_avg_ns_read[cpu] + current_avg_read ) /2
+
                      queue_length=len(self.chunk_buffer[cpu])
                      if queue_length > current_max_queue_length:
                         current_max_queue_length=queue_length
                      if queue_length < min_queue_length or current_min_queue_length is False:
                         current_min_queue_length=queue_length
                         next_cpu=cpu
-                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} : next {len(self.chunk_buffer[next_cpu])} -- {time_per_chunk} sec")
+                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} : next {len(self.chunk_buffer[next_cpu])} -- {time_per_chunk} sec - read[{current_avg_read}]")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
-                  if time_per_chunk < 1e-9:
-                     print("- time_per_chunk too small")
+                  if time_per_chunk < current_avg_read/1e9:
+                     print("- limit chunk time to avg read")
+                     time_per_chunk=current_avg_read/1e9
 
                   # - correction of chunk time
                   if current_max_queue_length >= max_queue_length:
