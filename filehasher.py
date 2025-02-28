@@ -414,7 +414,7 @@ class FileHasher():
                   if current_min_avg_read == 0:
                      current_min_avg_read=1
                   avg_read_spread=current_max_avg_read/current_min_avg_read
-                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{avg_read_spread:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]")
+                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{avg_read_spread:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]\r",end="")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
                   if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
@@ -426,13 +426,13 @@ class FileHasher():
                      # not larger than 100 ms
                      if time_per_chunk < 0.250:
                         time_per_chunk=time_per_chunk*1.1
-                        print(f"- new time per chunk: {time_per_chunk} sec (increasing)")
+                        ##print(f"- new time per chunk: {time_per_chunk} sec (increasing)")
                      else:
                         time_per_chunk=0.250
 
                   elif current_min_queue_length < min_queue_length and immune_count == 0:
                      time_per_chunk=time_per_chunk*0.9
-                     print(f"- new time per chunk: {time_per_chunk} sec (decreasing)")
+                     ##print(f"- new time per chunk: {time_per_chunk} sec (decreasing)")
 #                     if cpu_count < max_cpu_count:
 #                        max_queue_length=max_queue_length*1.1
 #                        #min_queue_length=max_queue_length
@@ -456,7 +456,7 @@ class FileHasher():
                         cpu_count=cpu_count+1
                         sensor=cpu_count
 
-                  print(f"- sensor: {cpu_count}/{sensor} {len(self.chunk_buffer[sensor])}")
+                  #print(f"- sensor: {cpu_count}/{sensor} {len(self.chunk_buffer[sensor])}")
 
                   if immune_count > 0:
                      immune_count=immune_count-1
