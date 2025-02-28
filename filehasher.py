@@ -425,7 +425,7 @@ class FileHasher():
                   if current_max_queue_length >= max_queue_length:
                      # not larger than 100 ms
                      if time_per_chunk < 0.250:
-                        time_per_chunk=time_per_chunk*2
+                        time_per_chunk=time_per_chunk*1.1
                         print(f"- new time per chunk: {time_per_chunk} sec (increasing)")
                      else:
                         time_per_chunk=0.250
@@ -445,7 +445,7 @@ class FileHasher():
                      sensor=cpu_count-1
                      if cpu_count > 1:
                         cpu_count=int(cpu_count/2)
-                     print(f"- cut down threads: {cpu_count}")
+#                     print(f"- cut down threads: {cpu_count}")
 
                   print(f"- sensor: {cpu_count}/{sensor} {len(self.chunk_buffer[sensor])}")
 
