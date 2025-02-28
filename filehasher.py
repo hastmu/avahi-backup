@@ -350,8 +350,18 @@ class FileHasher():
                self.thread[cpu].start()
 
             next_cpu=0
+            target_bw_s=10*1024*1024*1024 #  10GiB/s
+            chunks_per_s=target_bw_s / self.chunk_size
+            time_per_chunk=1/chunks_per_s
+            print(f"- time per chunk at target bw: {time_per_chunk} sec")
             max_queue_length=32
+            min_queue_length=8
+            immune_count=0
             for chunk in range(0,self.max_chk):
+
+               #print(f"- time per chunk at target bw: {time_per_chunk} sec")
+               time.sleep(time_per_chunk) # keep back to not overload queues
+
                old_data=self.hash_obj.get(chunk,False)
                if old_data is False:
                   # missing hash - guidance or data for threads
@@ -363,33 +373,50 @@ class FileHasher():
                      self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
 
                   if len(self.chunk_buffer[next_cpu]) > max_queue_length:
-                     if cpu_count > 1:
-                        cpu_count=cpu_count-1
-                        print("- reduced active queues...")
-                  elif len(self.chunk_buffer[next_cpu]) < 5:
-                     if cpu_count < max_cpu_count:
-                        print("- adding active queues...")
-                        cpu_count=cpu_count+1
+                     time_per_chunk=time_per_chunk*2
+                     print(f"- new time per chunk: {time_per_chunk} sec")
+
+#                     if cpu_count > 1:
+#                        cpu_count=cpu_count-1
+#                        if min_queue_length > 0:
+#                           min_queue_length=min_queue_length-1
+#                        print("- reduced active queues...")
+                  elif len(self.chunk_buffer[next_cpu]) < min_queue_length and immune_count == 0:
+                     time_per_chunk=time_per_chunk/2
+                     print(f"- new time per chunk: {time_per_chunk} sec")
+#                     if cpu_count < max_cpu_count:
+#                        max_queue_length=max_queue_length*1.1
+#                        #min_queue_length=max_queue_length
+#                        print("- adding active queues...")
+#                        cpu_count=cpu_count+1
+#                        immune_count=int(2*max_queue_length)
+
+                  if immune_count > 0:
+                     immune_count=immune_count-1
 
                   loop_count=0
                   while len(self.chunk_buffer[next_cpu]) > max_queue_length:
-                     print(f"- wait loop[{loop_count}] cpu[{next_cpu}/{cpu_count}] length[{len(self.chunk_buffer[next_cpu])}]\r",end="")
-                     time.sleep(0.1)
+                     info=""
+                     for cpu in range(0,max_cpu_count):
+                        info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
+
+                     print(f"- wait loop[{loop_count}] cpu[{next_cpu}/{cpu_count}] {info} {min_queue_length}-{max_queue_length}:{immune_count}\r",end="")
+                     time_per_chunk=time_per_chunk*2
+                     time.sleep(time_per_chunk)
                      loop_count=loop_count+1
                      if loop_count > 1000:
                         raise Exception("waiting too long...")
                         exit(1)
 
-                  #info=""
+                  info=""
                   min_len=False
                   for cpu in range(0,cpu_count):
                      if len(self.chunk_buffer[cpu]) < min_len or min_len is False:
                         next_cpu=cpu
                         min_len=len(self.chunk_buffer[cpu])
-                     #info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
+                     info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
+                  print(f"- stat {info}\r",end="")
 
-                  #print(f"- add for cpu[{chunk % cpu_count}] chunk[{chunk}] len[{len(self.chunk_buffer[chunk % cpu_count])}]")
-                  #print(f"- stat {info}\r",end="")
                   read_speed.update_run(self.chunk_size)
 #                  time.sleep(1)
                else:
