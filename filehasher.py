@@ -391,6 +391,11 @@ class FileHasher():
 #                        cpu_count=cpu_count+1
 #                        immune_count=int(2*max_queue_length)
 
+                  # if time becomes to high, the io-system is to slow, therefore reduce threads
+                  if time_per_chunk > 0.250:
+                     if cpu_count > 1:
+                        cpu_count=cpu_count/2
+
                   if immune_count > 0:
                      immune_count=immune_count-1
 
