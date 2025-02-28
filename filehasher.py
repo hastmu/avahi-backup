@@ -341,8 +341,12 @@ class FileHasher():
             max_cpu_count=multiprocessing.cpu_count()
             cpu_count=max_cpu_count
 
+            self.time_avg_ns_read={}
+            self.time_avg_ns_hash={}
             for cpu in range(0,cpu_count):
                self.chunk_buffer[cpu]={}
+               self.time_avg_ns_read[cpu]=0
+               self.time_avg_ns_hash[cpu]=0
                if threading_mode == 1:
                   self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True})
                else:
@@ -361,31 +365,52 @@ class FileHasher():
             self.chunk_buffer[sensor]=[]
             for chunk in range(0,self.max_chk):
 
-               #print(f"- time per chunk at target bw: {time_per_chunk} sec")
-               time.sleep(time_per_chunk) # keep back to not overload queues
-
                old_data=self.hash_obj.get(chunk,False)
                if old_data is False:
-                  # missing hash - guidance or data for threads
+
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
+
+                  #print(f"- time per chunk at target bw: {time_per_chunk} sec")
+                  time.sleep(time_per_chunk) # keep back to not overload queues
+
+                  # missing hash - guidance or data for threads
                   if threading_mode == 1:
                      self.chunk_buffer[next_cpu][chunk]=True
                      # if queue length is over the limit then reduce the active filled threads
                   else:
+                     s_time=time.time_ns()
                      self.chunk_buffer[next_cpu][chunk]=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
+                     self.time_avg_ns_read[next_cpu]=((s_time - time.time_ns()) + self.time_avg_ns_read[next_cpu]) / 2
 
-                  if len(self.chunk_buffer[next_cpu]) > max_queue_length:
-                     time_per_chunk=time_per_chunk*2
-                     print(f"- new time per chunk: {time_per_chunk} sec")
+                  # eval on performance and tune
+                  # - get max queue length
+                  current_min_queue_length=False
+                  current_max_queue_length=0
+                  for cpu in range(0,max_cpu_count):
+                     queue_length=len(self.chunk_buffer[cpu])
+                     if queue_length > current_max_queue_length:
+                        current_max_queue_length=queue_length
+                     if queue_length < min_queue_length or current_min_queue_length is False:
+                        current_min_queue_length=queue_length
+                        next_cpu=cpu
+                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} : next {len(self.chunk_buffer[next_cpu])} -- {time_per_chunk} sec")
 
-#                     if cpu_count > 1:
-#                        cpu_count=cpu_count-1
-#                        if min_queue_length > 0:
-#                           min_queue_length=min_queue_length-1
-#                        print("- reduced active queues...")
-                  elif len(self.chunk_buffer[next_cpu]) < min_queue_length and immune_count == 0:
+                  # if time_per_chunk is too small the chunk size is too small or the machine too fast.
+                  if time_per_chunk < 1e-9:
+                     print("- time_per_chunk too small")
+
+                  # - correction of chunk time
+                  if current_max_queue_length >= max_queue_length:
+                     # not larger than 100 ms
+                     if time_per_chunk < 0.250:
+                        time_per_chunk=time_per_chunk*2
+                        print(f"- new time per chunk: {time_per_chunk} sec (increasing)")
+                     else:
+                        time_per_chunk=0.250
+
+                  elif current_min_queue_length < min_queue_length and immune_count == 0:
                      time_per_chunk=time_per_chunk*0.9
-                     print(f"- new time per chunk: {time_per_chunk} sec")
+                     print(f"- new time per chunk: {time_per_chunk} sec (decreasing)")
 #                     if cpu_count < max_cpu_count:
 #                        max_queue_length=max_queue_length*1.1
 #                        #min_queue_length=max_queue_length
@@ -393,8 +418,8 @@ class FileHasher():
 #                        cpu_count=cpu_count+1
 #                        immune_count=int(2*max_queue_length)
 
-                  # if time becomes to high, the io-system is to slow, therefore reduce threads
-                  if time_per_chunk > 0.250 and len(self.chunk_buffer[next_cpu]) > 8 and len(self.chunk_buffer[sensor]) == 0:
+                  elif time_per_chunk == 0.250 and current_min_queue_length > min_queue_length and len(self.chunk_buffer[sensor]) == 0:
+                     # if time becomes to high, the io-system is to slow, therefore reduce threads                     
                      sensor=cpu_count-1
                      if cpu_count > 1:
                         cpu_count=int(cpu_count/2)
@@ -402,21 +427,11 @@ class FileHasher():
 
                   print(f"- sensor: {sensor} {len(self.chunk_buffer[sensor])}")
 
-
                   if immune_count > 0:
                      immune_count=immune_count-1
 
-#                  info=""
-                  min_len=False
-                  for cpu in range(0,cpu_count):
-                     if len(self.chunk_buffer[cpu]) < min_len or min_len is False:
-                        next_cpu=cpu
-                        min_len=len(self.chunk_buffer[cpu])
-#                     info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
-#                  print(f"- stat {info}\r",end="")
-
                   read_speed.update_run(self.chunk_size)
-#                  time.sleep(1)
+
                else:
                   #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
                   pass
