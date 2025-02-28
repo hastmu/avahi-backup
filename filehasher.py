@@ -414,7 +414,7 @@ class FileHasher():
                   if current_min_avg_read == 0:
                      current_min_avg_read=1
                   avg_read_spread=current_max_avg_read/current_min_avg_read
-                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{avg_read_spread:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]\r",end="")
+                  print(f"- cpu[{cpu_count}] queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{avg_read_spread:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]\r",end="")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
                   if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
