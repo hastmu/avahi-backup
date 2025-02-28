@@ -357,6 +357,8 @@ class FileHasher():
             max_queue_length=32
             min_queue_length=8
             immune_count=0
+            sensor=cpu_count
+            self.chunk_buffer[sensor]=0
             for chunk in range(0,self.max_chk):
 
                #print(f"- time per chunk at target bw: {time_per_chunk} sec")
@@ -392,7 +394,8 @@ class FileHasher():
 #                        immune_count=int(2*max_queue_length)
 
                   # if time becomes to high, the io-system is to slow, therefore reduce threads
-                  if time_per_chunk > 0.250:
+                  if time_per_chunk > 0.250 and len(self.chunk_buffer[sensor]) == 0:
+                     sensor=cpu_count
                      if cpu_count > 1:
                         cpu_count=int(cpu_count/2)
                      print(f"- cut down threads: {cpu_count}")
