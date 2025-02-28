@@ -395,10 +395,13 @@ class FileHasher():
 
                   # if time becomes to high, the io-system is to slow, therefore reduce threads
                   if time_per_chunk > 0.250 and len(self.chunk_buffer[sensor]) == 0:
-                     sensor=cpu_count
+                     sensor=cpu_count-1
                      if cpu_count > 1:
                         cpu_count=int(cpu_count/2)
                      print(f"- cut down threads: {cpu_count}")
+                  else:
+                     print(f"- sensor: {len(self.chunk_buffer[sensor])}")
+
 
                   if immune_count > 0:
                      immune_count=immune_count-1
