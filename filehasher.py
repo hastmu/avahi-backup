@@ -444,7 +444,12 @@ class FileHasher():
                      # if time becomes to high, the io-system is to slow, therefore reduce threads                     
                      sensor=cpu_count-1
                      if cpu_count > 1:
-                        cpu_count=int(cpu_count/2)
+                        if avg_read_spread > 20:
+                           cpu_count=int(cpu_count/2)
+                        else:
+                           cpu_count=cpu_count-1
+                        sensor=cpu_count
+
 #                     print(f"- cut down threads: {cpu_count}")
                   elif avg_read_spread < 1.5:
                      if cpu_count < max_cpu_count:
