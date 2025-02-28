@@ -401,7 +401,7 @@ class FileHasher():
                      #   info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
 
                      #print(f"- wait loop[{loop_count}] cpu[{next_cpu}/{cpu_count}] {info} {min_queue_length}-{max_queue_length}:{immune_count}\r",end="")
-                     #time_per_chunk=time_per_chunk*2
+                     time_per_chunk=time_per_chunk*2
                      time.sleep(time_per_chunk)
                      loop_count=loop_count+1
                      if loop_count > 1000:
