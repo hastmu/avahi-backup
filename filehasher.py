@@ -394,7 +394,8 @@ class FileHasher():
                   # if time becomes to high, the io-system is to slow, therefore reduce threads
                   if time_per_chunk > 0.250:
                      if cpu_count > 1:
-                        cpu_count=cpu_count/2
+                        cpu_count=int(cpu_count/2)
+                     print(f"- cut down threads: {cpu_count}")
 
                   if immune_count > 0:
                      immune_count=immune_count-1
