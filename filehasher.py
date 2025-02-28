@@ -424,6 +424,8 @@ class FileHasher():
                   # - correction of chunk time
                   if current_max_queue_length >= max_queue_length:
                      # not larger than 100 ms
+                     time.sleep(time_per_chunk) # do extra wait.
+                     # correct
                      if time_per_chunk < 0.250:
                         time_per_chunk=time_per_chunk*1.1
                         ##print(f"- new time per chunk: {time_per_chunk} sec (increasing)")
