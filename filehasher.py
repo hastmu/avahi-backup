@@ -374,7 +374,7 @@ class FileHasher():
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
 
                   #print(f"- time per chunk at target bw: {time_per_chunk} sec")
-                  time.sleep(time_per_chunk) # keep back to not overload queues
+                  time.sleep(time_per_chunk/cpu_count) # keep back to not overload queues
 
                   # missing hash - guidance or data for threads
                   if threading_mode == 1:
