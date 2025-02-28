@@ -358,7 +358,7 @@ class FileHasher():
             min_queue_length=8
             immune_count=0
             sensor=cpu_count
-            self.chunk_buffer[sensor]=0
+            self.chunk_buffer[sensor]=[]
             for chunk in range(0,self.max_chk):
 
                #print(f"- time per chunk at target bw: {time_per_chunk} sec")
