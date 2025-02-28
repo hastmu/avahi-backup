@@ -408,14 +408,14 @@ class FileHasher():
                         raise Exception("waiting too long...")
                         exit(1)
 
-                  info=""
+#                  info=""
                   min_len=False
                   for cpu in range(0,cpu_count):
                      if len(self.chunk_buffer[cpu]) < min_len or min_len is False:
                         next_cpu=cpu
                         min_len=len(self.chunk_buffer[cpu])
-                     info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
-                  print(f"- stat {info}\r",end="")
+#                     info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
+#                  print(f"- stat {info}\r",end="")
 
                   read_speed.update_run(self.chunk_size)
 #                  time.sleep(1)
