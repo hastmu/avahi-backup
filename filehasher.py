@@ -382,7 +382,7 @@ class FileHasher():
 #                           min_queue_length=min_queue_length-1
 #                        print("- reduced active queues...")
                   elif len(self.chunk_buffer[next_cpu]) < min_queue_length and immune_count == 0:
-                     time_per_chunk=time_per_chunk*0.8
+                     time_per_chunk=time_per_chunk*0.9
                      print(f"- new time per chunk: {time_per_chunk} sec")
 #                     if cpu_count < max_cpu_count:
 #                        max_queue_length=max_queue_length*1.1
@@ -393,20 +393,6 @@ class FileHasher():
 
                   if immune_count > 0:
                      immune_count=immune_count-1
-
-                  loop_count=0
-                  while len(self.chunk_buffer[next_cpu]) > max_queue_length:
-                     #info=""
-                     #for cpu in range(0,max_cpu_count):
-                     #   info=f" cpu[{cpu:>2}] len[{len(self.chunk_buffer[cpu]):>4}] {info}"
-
-                     #print(f"- wait loop[{loop_count}] cpu[{next_cpu}/{cpu_count}] {info} {min_queue_length}-{max_queue_length}:{immune_count}\r",end="")
-                     time_per_chunk=time_per_chunk*2
-                     time.sleep(time_per_chunk)
-                     loop_count=loop_count+1
-                     if loop_count > 1000:
-                        raise Exception("waiting too long...")
-                        exit(1)
 
 #                  info=""
                   min_len=False
