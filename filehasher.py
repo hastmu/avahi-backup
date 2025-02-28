@@ -399,8 +399,8 @@ class FileHasher():
                      if cpu_count > 1:
                         cpu_count=int(cpu_count/2)
                      print(f"- cut down threads: {cpu_count}")
-                  else:
-                     print(f"- sensor: {sensor} {len(self.chunk_buffer[sensor])}")
+
+                  print(f"- sensor: {sensor} {len(self.chunk_buffer[sensor])}")
 
 
                   if immune_count > 0:
