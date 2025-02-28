@@ -448,8 +448,8 @@ class FileHasher():
 #                     print(f"- cut down threads: {cpu_count}")
                   elif avg_read_spread == 1:
                      if cpu_count < max_cpu_count:
-                        sensor=cpu_count
                         cpu_count=cpu_count+1
+                        sensor=cpu_count
 
                   print(f"- sensor: {cpu_count}/{sensor} {len(self.chunk_buffer[sensor])}")
 
