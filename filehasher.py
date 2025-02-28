@@ -390,19 +390,30 @@ class FileHasher():
                   current_min_queue_length=False
                   current_max_queue_length=0
                   current_avg_read=0
+                  current_min_avg_read=False
+                  current_max_avg_read=0
                   for cpu in range(0,max_cpu_count):
+                     # get avg read
+                     avg_read=self.time_avg_ns_read[cpu]
                      if current_avg_read is False:
-                        current_avg_read=self.time_avg_ns_read[cpu]
+                        current_avg_read=avg_read
                      else:
-                        current_avg_read=(self.time_avg_ns_read[cpu] + current_avg_read ) /2
-
+                        current_avg_read=(avg_read + current_avg_read ) /2
+                     # get min and max
+                     if avg_read > current_max_avg_read:
+                        current_max_avg_read=avg_read
+                     if avg_read < current_min_avg_read or current_min_avg_read is False:
+                        current_min_avg_read=avg_read
+                     # get queue length
                      queue_length=len(self.chunk_buffer[cpu])
                      if queue_length > current_max_queue_length:
                         current_max_queue_length=queue_length
                      if queue_length < min_queue_length or current_min_queue_length is False:
                         current_min_queue_length=queue_length
                         next_cpu=cpu
-                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} : next {len(self.chunk_buffer[next_cpu])} -- {time_per_chunk} sec - read[{current_avg_read}]")
+                  if current_min_avg_read == 0:
+                     current_min_avg_read=1
+                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{current_max_avg_read/current_min_avg_read:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
                   if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
