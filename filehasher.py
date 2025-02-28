@@ -405,7 +405,7 @@ class FileHasher():
                   print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} : next {len(self.chunk_buffer[next_cpu])} -- {time_per_chunk} sec - read[{current_avg_read}]")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
-                  if time_per_chunk < current_avg_read/1e9:
+                  if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
                      print("- limit chunk time to avg read")
                      time_per_chunk=current_avg_read/1e9
 
