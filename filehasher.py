@@ -382,7 +382,7 @@ class FileHasher():
 #                           min_queue_length=min_queue_length-1
 #                        print("- reduced active queues...")
                   elif len(self.chunk_buffer[next_cpu]) < min_queue_length and immune_count == 0:
-                     time_per_chunk=time_per_chunk/2
+                     time_per_chunk=time_per_chunk*0.8
                      print(f"- new time per chunk: {time_per_chunk} sec")
 #                     if cpu_count < max_cpu_count:
 #                        max_queue_length=max_queue_length*1.1
