@@ -392,7 +392,7 @@ class FileHasher():
                   current_avg_read=0
                   current_min_avg_read=False
                   current_max_avg_read=0
-                  for cpu in range(0,max_cpu_count):
+                  for cpu in range(0,cpu_count):
                      # get avg read
                      avg_read=self.time_avg_ns_read[cpu]
                      if current_avg_read is False:
