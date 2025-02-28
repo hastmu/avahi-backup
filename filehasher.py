@@ -440,7 +440,7 @@ class FileHasher():
 #                        cpu_count=cpu_count+1
 #                        immune_count=int(2*max_queue_length)
 
-                  elif avg_read_spread > 2 and len(self.chunk_buffer[sensor]) == 0:
+                  elif avg_read_spread > 3 and len(self.chunk_buffer[sensor]) == 0:
                      # if time becomes to high, the io-system is to slow, therefore reduce threads                     
                      sensor=cpu_count-1
                      if cpu_count > 1:
