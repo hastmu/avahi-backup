@@ -413,7 +413,8 @@ class FileHasher():
                         next_cpu=cpu
                   if current_min_avg_read == 0:
                      current_min_avg_read=1
-                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{current_max_avg_read/current_min_avg_read:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]")
+                  avg_read_spread=current_max_avg_read/current_min_avg_read
+                  print(f"- queue_length: {current_min_queue_length}-{current_max_queue_length} -- read [{current_min_avg_read:.2f}/{current_max_avg_read:.2f}:{avg_read_spread:.2f}] -- {time_per_chunk} sec - read[{current_avg_read}]")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
                   if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
@@ -439,7 +440,7 @@ class FileHasher():
 #                        cpu_count=cpu_count+1
 #                        immune_count=int(2*max_queue_length)
 
-                  elif time_per_chunk == 0.250 and current_min_queue_length > min_queue_length and len(self.chunk_buffer[sensor]) == 0:
+                  elif avg_read_spread > 2 and len(self.chunk_buffer[sensor]) == 0:
                      # if time becomes to high, the io-system is to slow, therefore reduce threads                     
                      sensor=cpu_count-1
                      if cpu_count > 1:
