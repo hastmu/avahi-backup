@@ -159,15 +159,6 @@ class FileHasher():
       self.save_hashes=False
       self._debug=debug
 
-      # method
-      # TODO: conclude on method if needed
-      self.method=hash_method
-      self.hash_file_def=f"hash_file_"+self.method
-      if hasattr(self, self.hash_file_def) and callable(func := getattr(self, self.hash_file_def)):
-         pass
-      else:
-         raise Exception("Unknown hash function")    
-
       # get inputfile, stats and check if exists.
       if inputfile is not False:
          if os.path.isfile(inputfile):
@@ -240,12 +231,6 @@ class FileHasher():
                break
          yield bytes(data)
 
-   def hash_file_flat(self,piece):
-      # hash each chk
-      data=hashlib.sha256(piece)
-      # convert to string
-      self.hash_obj[self.chk]=data.hexdigest()
-
    def update_hash_idx(self, *, chunk, new_hash):
 
       old_hash=self.hash_obj.get(chunk,False)
@@ -285,7 +270,6 @@ class FileHasher():
             time.sleep(0.001)
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - end")
-      
 
    def hash_file(self, *, incremental=True,threading_mode=0):
       # update stats
@@ -333,7 +317,7 @@ class FileHasher():
                   pass
 
          elif threading_mode == 1 or threading_mode == 2:
-            # only hashing
+            # 1 = read+hash, 2 = hash
 
             # BROKEN-doest not build all chunks.
 
@@ -360,12 +344,15 @@ class FileHasher():
             target_bw_s=10*1024*1024*1024 #  10GiB/s
             chunks_per_s=target_bw_s / self.chunk_size
             time_per_chunk=1/chunks_per_s
-            print(f"- time per chunk at target bw: {time_per_chunk} sec")
+            self.debug(type="INFO:hash_file",msg=f"- time per chunk at target bw: {time_per_chunk} sec")
+            # purely artificially chosen limits, a little bit tuned while development.
             max_queue_length=32
             min_queue_length=8
+            # default sensor values
             immune_count=0
             sensor=cpu_count
             self.chunk_buffer[sensor]=[]
+            # chunk cycling.
             for chunk in range(0,self.max_chk):
 
                old_data=self.hash_obj.get(chunk,False)
@@ -373,7 +360,7 @@ class FileHasher():
 
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
 
-                  #print(f"- time per chunk at target bw: {time_per_chunk} sec")
+                  # wait a glimpse of time to not overload unneeded the system.
                   time.sleep(time_per_chunk/cpu_count) # keep back to not overload queues
 
                   # missing hash - guidance or data for threads
@@ -386,6 +373,13 @@ class FileHasher():
                      self.time_avg_ns_read[next_cpu]=((time.time_ns()-s_time) + self.time_avg_ns_read[next_cpu]) / 2
 
                   # eval on performance and tune
+                  # idea:
+                  # - if queue length is max then the system (io or/and cpu) is too slow.
+                  #   - therefore reduce pressure by increasing time_per_chunk 
+                  # - if read times are too spread the io system is overloaded
+                  #   - reduce threads.
+
+                  
                   # - get max queue length
                   current_min_queue_length=False
                   current_max_queue_length=0
@@ -416,16 +410,16 @@ class FileHasher():
                      avg_read_spread=1
                   else:
                      avg_read_spread=current_max_avg_read/current_min_avg_read
-                  print(f"- cpu[{cpu_count:>2}] queue_length: {current_min_queue_length:>2}-{current_max_queue_length:>2} -- read [{current_min_avg_read:>12.2f}/{current_max_avg_read:>12.2f}:{avg_read_spread:>3.1f}] -- {time_per_chunk:>12f} sec - read[{current_avg_read:>12.2f}]\r",end="")
+                  #debug#print(f"- cpu[{cpu_count:>2}] queue_length: {current_min_queue_length:>2}-{current_max_queue_length:>2} -- read [{current_min_avg_read:>12.2f}/{current_max_avg_read:>12.2f}:{avg_read_spread:>3.1f}] -- {time_per_chunk:>12f} sec - read[{current_avg_read:>12.2f}]\r",end="")
 
                   # if time_per_chunk is too small the chunk size is too small or the machine too fast.
                   if time_per_chunk < current_avg_read/1e9 and current_min_queue_length > min_queue_length:
-                     print("- limit chunk time to avg read")
+                     #debug#print("- limit chunk time to avg read")
                      time_per_chunk=current_avg_read/1e9
 
                   # - correction of chunk time
                   if current_max_queue_length >= max_queue_length:
-                     # not larger than 100 ms
+                     # not larger than 250 ms
                      time.sleep(time_per_chunk) # do extra wait.
                      # correct
                      if time_per_chunk < 0.250:
@@ -479,8 +473,6 @@ class FileHasher():
          else:
             raise Exception("threading mode unknown")
             
-
-
       print(f"\33[2K\r",end='\r')
 
    def send_msg(self, *, type=False, data={}):
@@ -508,7 +500,7 @@ class FileHasher():
 
       self.debug(type="INFO:verify_against",msg="Start - hash_filename["+str(hash_filename)+"] write_delta_file["+str(write_delta_file)+"] chunk_limit["+str(chunk_limit)+"]")
       # prepare delta metadata
-      if write_delta_file != False:
+      if write_delta_file is not False:
          patch_data={
             "version": self.patch_file_version,
             "stats" : self.inputfile_stats,
@@ -517,7 +509,7 @@ class FileHasher():
             "mismatch_idx_hashes": {} 
          }
       # remote delta
-      if remote_delta != False:
+      if remote_delta is not False:
          patch_data={
             "version": self.patch_file_version,
             "stats" : self.inputfile_stats,
@@ -532,14 +524,14 @@ class FileHasher():
       source_file=False
       inputfile_handle=False
 
-      if verify != False:
+      if verify is not False:
          loaded_hashes=len(verify["hashes"])
          # init counts
          count=match=mismatch=0
          self.mismatched_idx=[]
          self.mismatched_idx_hashes={}
 
-         if write_delta_file != False:
+         if write_delta_file is not False:
             delta_file=open(write_delta_file, 'wb')
             print(f"- write delta files {write_delta_file}...")
 
@@ -556,15 +548,15 @@ class FileHasher():
                data_chunk=False
 
                # refresh chk if needed
-               if input_hash == False:
-                  if read_speed == False:
+               if input_hash is False:
+                  if read_speed is False:
                      read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
-                  if source_file == False:
+                  if source_file is False:
                      source_file=open(self.inputfile,"rb")
                      source_file.seek(0)
                   # we need to hash the file again.
                   # TODO: make that method agnostic.
-                  if remote_delta == False:
+                  if remote_delta is False:
                      read_speed.update_run(self.chunk_size)
                   source_file.seek(self.chk*self.chunk_size)
                   data_chunk=source_file.read(self.chunk_size)
@@ -579,27 +571,27 @@ class FileHasher():
    #               print(f"new hash {self.hash_obj[self.chk]} for chk {self.chk}")
 
                # compare
-               if input_hash == compare_hash and input_hash != False:
+               if input_hash == compare_hash and input_hash is not False:
                   match=match+1
                else:
                   mismatch=mismatch+1
                   self.debug(type="INFO:verify_against",msg="delta at chk["+str(self.chk)+"] SRC["+str(input_hash)+"] VERIFY["+str(compare_hash)+"]")
                   
-                  if write_delta_file != False or remote_delta != False:
-                     if source_file == False:
+                  if write_delta_file is not False or remote_delta is not False:
+                     if source_file is False:
                         source_file=open(self.inputfile,"rb")
                         source_file.seek(0)
                      self.mismatched_idx.append(self.chk)
                      self.mismatched_idx_hashes[self.chk]=input_hash
                      # seek source file
-                     if data_chunk == False:
+                     if data_chunk is False:
                         self.debug(type="INFO:verify_against",msg="re-read inputfile chk["+str(self.chk)+"] hash["+str(input_hash)+"]")
                         source_file.seek(self.chk*self.chunk_size)
                         data_chunk=source_file.read(self.chunk_size)
                      
-                     if write_delta_file != False:
+                     if write_delta_file is not False:
                         delta_file.write(data_chunk)
-                     if remote_delta != False:
+                     if remote_delta is not False:
                         send_data={
                            "chunk": self.chk,
                            "chunk_data": data_chunk,
@@ -612,8 +604,8 @@ class FileHasher():
          #print(f"\33[2K\r",end='\r')
          print(f"verify [#{loaded_hashes}:{hash_filename}] loaded - M[#{match}:!#{mismatch}]")
 
-         if write_delta_file != False:
-            if source_file != False:
+         if write_delta_file is not False:
+            if source_file is not False:
                source_file.close()
             delta_file.close()
             if mismatch > 0:
