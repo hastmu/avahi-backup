@@ -76,7 +76,7 @@ function hash.local_file() {
    HASH_DATA["${3}"]="${hashfile}"
 
    timeout --preserve-status "$1" "${HASHER_CFG["FILEHASHER"]}" "--min-chunk-size=$2" \
-                  --inputfile "${3}" \
+                  --inputfile "${3}" --thread-mode 1 \
                   --hashfile "${hashfile}"
 
    stat=$?
