@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 
-# copyright 2024 by gh-hastmu@gmx.de
+# copyright 2024-2025 by gh-hastmu@gmx.de
 # homed at: https://github.com/hastmu/avahi-backup
+
+import signal
+import sys
+import base64
+import threading
+import multiprocessing
+import os
+import hashlib
+import atexit
+import time
+import pickle
+import math
+import argparse
 
 # defaults
 from pathlib import Path
@@ -10,12 +23,6 @@ _CFG={
    "default_hash_basedir": str(Path.home())+"/.cache/avahi-backup/hashes"
 }
 
-import atexit
-import time
-import pickle
-import math
-
-import argparse
 
 parser = argparse.ArgumentParser("filehasher")
 parser.add_argument("--version", action='store_true', help="show version and exit")
@@ -53,22 +60,25 @@ args = parser.parse_args()
 
 # exit function
 def save_hash_file():
+   print("---save hash---")
    FH.save_hash()
 
-import signal
-import sys
-import base64
-import threading
-import multiprocessing
 
-def sigterm_handler(signal, _stack_frame):
-    # Raises SystemExit(0):
-    sys.exit(2)
+def sigterm_handler(_signal, _stack_frame):
+   # Raises SystemExit(0):
+   os.write(sys.stdout.fileno(), b"-- signal handler --\n")
+#   print("-- signal handler --")
+ #  print(f"{_signal}")
+#   signal.signal(signal.SIGTERM, False)
+#   signal.signal(signal.SIGINT, False)
+   try:
+      FH.save_hash()
+   except:
+      pass
 
-signal.signal(signal.SIGTERM, sigterm_handler)
+   #sys.exit(2)
+   os._exit(2)
 
-import os
-import hashlib
 
 class speed():
 
@@ -690,7 +700,8 @@ class FileHasher():
 
    def debug(self,*,type="INFO",msg="-"):
       if self._debug == True:
-         print(f"[{type}]: {msg}")
+         #print(f"[{type}]: {msg}")
+         os.write(sys.stderr.fileno(), f"[{type:>20}]: {msg}\n".encode())
 
    def load_hash(self,*, hashfile=False, extended_tests=False,type_patch_file=False):
 
@@ -766,6 +777,16 @@ class FileHasher():
 
    def save_hash(self):
 
+      self.debug(type="INFO:save_hash",msg=f"- start")
+      # mark inactive
+      self.active=False
+      for cpu in range(0,multiprocessing.cpu_count()):
+         try:
+            self.debug(type="INFO:save_hash",msg=f"  - join thread {cpu}.")
+            self.thread[cpu].join()
+         except:
+            self.debug(type="INFO:save_hash",msg=f"    - tried to join thread {cpu} failed.")
+     
       if self.save_hashes == True:
          data={}
          data["inputfile"]=os.path.abspath(self.inputfile)
@@ -779,8 +800,13 @@ class FileHasher():
          # save
          with open(self.hashfile, 'wb') as handle:
             pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-      
+
+         self.debug(type="INFO:save_hash",msg=f"  - saved under {self.hash_file}")
+
+
       self.feedback()
+      self.debug(type="INFO:save_hash",msg=f"- end")
+
 
 version="1.0.18"
 
@@ -865,6 +891,9 @@ else:
       exit(0)
 
    atexit.register(save_hash_file)
+   signal.signal(signal.SIGTERM, sigterm_handler)
+   signal.signal(signal.SIGINT, sigterm_handler)
+   signal.signal(signal.SIGHUP, sigterm_handler)
 
    if args.verify_against is False and args.apply_delta_file is False:
       # normal hashing 
