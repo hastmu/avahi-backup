@@ -16,6 +16,12 @@ import pickle
 import math
 import argparse
 
+import timeit
+
+import zlib
+#import gzip
+#import lzma
+
 # defaults
 from pathlib import Path
 
@@ -52,6 +58,7 @@ group.add_argument("--remote-src-filename", help="remote file name which is sour
 group.add_argument("--remote-username", help="ssh key to load in addition to use", type=str, default=False)
 group.add_argument("--remote-password", help="ssh key to load in addition to use", type=str, default=False)
 group.add_argument("--remote-ssh-key", help="ssh key to load in addition to use", type=str, default=False)
+group.add_argument("--remote-transfer-mode", help="0 (default): json-ascii, 1: binary, 2: bin+compression, 3: bin+auto-compress", type=int, default=0)
 
 group = parser.add_argument_group('Debugging...')
 group.add_argument("--show-hashes", help="lists stored hashes in hash file", type=str, default=False)
@@ -60,13 +67,13 @@ args = parser.parse_args()
 
 # exit function
 def save_hash_file():
-   print("---save hash---")
+   # print("---save hash---")
    FH.save_hash()
 
 
 def sigterm_handler(_signal, _stack_frame):
    # Raises SystemExit(0):
-   os.write(sys.stdout.fileno(), b"-- signal handler --\n")
+##   os.write(sys.stdout.fileno(), b"-- signal handler --\n")
 #   print("-- signal handler --")
  #  print(f"{_signal}")
 #   signal.signal(signal.SIGTERM, False)
@@ -117,9 +124,9 @@ class speed():
          # output stats
 #         print(f"chunk {self.chk} of {(self.chk*100/self.max_chk):3.2f}% size={self.chunk_size} read in {read_speed.report()}", end="\r")
          if self.max_size is False:
-            print(f"chunk processed {self.abs_chk_reads} at {self.report()}", end="\r")
+            print(f"chunk processed {self.abs_chk_reads:12} at {self.report()}", end="\r")
          else:
-            print(f"chunk processed {self.abs_chk_reads} of {(self.abs_chk_reads*100/(self.max_size/size)):3.2f}% at {self.report()} with Threads[{threading.active_count()}|{len(multiprocessing.active_children())}]", end="\r")
+            print(f"chunk processed {self.abs_chk_reads:12} of {(self.abs_chk_reads*100/(self.max_size/size)):>6.2f}% at {self.report()} with Threads[{threading.active_count()}|{len(multiprocessing.active_children())}]", end="\r")
 
          # new cycle
          self.s_time=time.time()
@@ -150,13 +157,28 @@ class speed():
       return str(int(value)) + " " + units[idx]
 
    def report(self):
-      result=self.size_bw(self.min)+" - " + self.size_bw(self.avg) + " - " + self.size_bw(self.max)
+#      result=self.size_bw(self.min)+" - " + self.size_bw(self.avg) + " - " + self.size_bw(self.max)
+      result=f"{self.size_bw(self.min):4} - {self.size_bw(self.avg):4} - {self.size_bw(self.max):4}"
       return result
+   
+class benchmark():
 
+   def __init__(self,name):
+      self.start=timeit.default_timer()
+      self.name=name
+
+   def __enter__(self):
+      pass
+      
+   def __exit__(self,a,b,c):
+      self.end=timeit.default_timer()
+      print(f"{self.name} took {self.end - self.start} seconds")
+      
 class FileHasher():
 
    chunk_file_version = "v1.0.3"
    patch_file_version = "v1.0.0"
+   patch_file_version_int = 1
 
    def __init__(self,* , inputfile=False, hashfile=False, chunk_size=8192, hash_method="flat", debug=False):
 
@@ -164,10 +186,15 @@ class FileHasher():
       self.threads=[]
       self.lock_reading=threading.Lock()
       self.lock_update_idx=threading.Lock()
+      self.lock_delta_file=threading.Lock()
+      self.lock_delta_stream=threading.Lock()
       self.hash_obj={}
       self.mtime=0
       self.save_hashes=False
       self._debug=debug
+      self.local_delta_file_handle=False
+      self.verify_reference=False
+      self.remote_delta_header_sent=False
 
       # get inputfile, stats and check if exists.
       if inputfile is not False:
@@ -230,21 +257,10 @@ class FileHasher():
             self.lock_reading.release()
          return False
 
-   def _read_file_in_chunks(self,file_object, *,chunk_size=8192,seek_chunk=-1):
-
-      if seek_chunk != -1:
-         file_object.seek(seek_chunk*chunk_size)
-
-      while True:
-         data = file_object.read(chunk_size)
-         if not data:
-               break
-         yield bytes(data)
-
-   def update_hash_idx(self, *, chunk, new_hash):
+   def update_hash_idx(self, *, chunk, new_hash,data=None,local_delta_file=False,remote_delta=False):
 
       old_hash=self.hash_obj.get(chunk,False)
-      if old_hash == False or old_hash != new_hash:
+      if old_hash is False or old_hash != new_hash:
          # only add and flag as updated if there is a real change.
          self.debug(type="INFO:update_hash_idx",msg=f"- update {chunk} [{self.chunk_size*chunk}-{self.chunk_size*(chunk+1)}/{self.inputfile_stats.st_size}] with new[{new_hash}] old[{old_hash}]- length {self.hash_obj.__len__()}")
          self.lock_update_idx.acquire()
@@ -254,7 +270,72 @@ class FileHasher():
       else:
          self.debug(type="INFO:update_hash_idx",msg=f"- same   {chunk} with [{new_hash}]")
 
-   def hash_thread(self, *, cpu=-1,Read_file=False):
+      # verify if so
+      if self.verify_reference is not False:
+         reference_hash=self.verify_reference.get(chunk,False)
+         if reference_hash is False or reference_hash != new_hash:
+            # mismatch
+            self.debug(type="INFO:update_hash_idx",msg=f"  - verify input hash[{new_hash}] reference hash[{reference_hash}] - mismatch")
+            self.mismatched_idx_hashes[chunk]=new_hash
+            if local_delta_file is not False or remote_delta is not False:
+               # get data if needed
+               if data is None:
+                  data=self._read_one_chunk(self.inputfile_handle,chunk_size=self.chunk_size,seek_chunk=chunk,lock=True)
+
+            if local_delta_file is not False:
+               with self.lock_delta_file:
+                  # TODO: if data=none read
+                  # establish file handle for delta file if not done already.
+                  if self.local_delta_file_handle is False:
+                     self.debug(type="INFO:update_hash_idx",msg=f"    - write to delta file: {local_delta_file}")
+                     self.local_delta_file_handle=open(local_delta_file,"wb")
+                     # write header
+                     # current version works with stable chunks sizes, future adaptive chunks would reduce transfer size.
+                     # write header
+                     a=0
+                     self.local_delta_file_handle.write(a.to_bytes(8,'big'))                             # number of chunks in file
+                     self.local_delta_file_handle.write(self.patch_file_version_int.to_bytes(8,'big'))   # chunk file version
+                     self.local_delta_file_handle.write(self.chunk_size.to_bytes(8,'big'))               # chunk_size
+                     self.local_delta_file_handle.write(len(bytes.fromhex(new_hash)).to_bytes(8,'big'))  # length of hash
+                     stats=pickle.dumps(self.inputfile_stats, protocol=pickle.HIGHEST_PROTOCOL)
+                     self.local_delta_file_handle.write(len(stats).to_bytes(8,'big'))                    # length of hash
+                     self.local_delta_file_handle.write(stats)                                           # stats.
+                                          
+                  # write to delta to handle
+               
+               self.send_patch_frame(handle=self.local_delta_file_handle,chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_file)
+
+            if remote_delta is not False:
+
+               with self.lock_delta_stream:
+                  # always locked to be sequential - for the first header.
+                  if self.remote_delta_header_sent is False:
+                     self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send header")
+                     # send header
+
+                     a=0
+                     
+                     self.send2stdout(a.to_bytes(8,'big'))                             # number of chunks in file
+                     self.send2stdout(self.patch_file_version_int.to_bytes(8,'big'))   # chunk file version
+                     self.send2stdout(self.chunk_size.to_bytes(8,'big'))               # chunk_size
+                     self.send2stdout(len(bytes.fromhex(new_hash)).to_bytes(8,'big'))  # length of hash
+                     stats=pickle.dumps(self.inputfile_stats, protocol=pickle.HIGHEST_PROTOCOL)
+                     self.send2stdout(len(stats).to_bytes(8,'big'))                    # length of hash
+                     self.send2stdout(stats)                                           # stats.
+
+                     self.remote_delta_header_sent=True
+
+               self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send frame")
+               self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
+
+         else:
+            #self.debug(type="INFO:update_hash_idx",msg=f"  - verify input hash[{new_hash}] reference hash[{reference_hash}] - match")
+            pass
+
+   def send2stdout(self,data):
+      os.write(sys.stdout.fileno(), data)
+
+   def hash_thread(self, *, cpu=-1,Read_file=False, local_delta_file=False):
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - start")
 
@@ -272,25 +353,51 @@ class FileHasher():
                else:
                   self.debug(type="INFO:hash_thread",msg=f"- processing cpu[{cpu}] chunk[{chunk}] length[{len(self.chunk_buffer[cpu])}]")
                   piece=self.chunk_buffer[cpu].get(chunk,False)
+
                if piece is not False:
                   del self.chunk_buffer[cpu][chunk]
                   data=hashlib.sha256(piece)
-                  self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
+                  self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest(),data=piece,local_delta_file=local_delta_file)
 
             time.sleep(0.001)
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - end")
 
-   def hash_file(self, *, incremental=True,threading_mode=0):
+   def hash_file(self, *, incremental=True,threading_mode=0,verify_hash_file=False,local_delta_file=False,remote_delta=False):
       # update stats
       self._refresh_inputfile_stats()
-      # hash
+      # defaults for def handshake
+      self.data={}
+      self.delta_file=False
+      self.delta_remote=False
+      # defaults for verification
+      self.mismatched_idx=[]
+      self.mismatched_idx_hashes={}
+      # for delta
+      self.remote_delta_header_sent=False
+
       # TODO: Revisit incremental with the new index missing scheme.
       if incremental is False:
          self.hash_obj={}
+      # load hash to verify against if given
+      if verify_hash_file is not False:
+         self.debug(type="INFO:hash_file",msg=f"- verify reference: {verify_hash_file}")
+         loaded=self.load_hash(hashfile=verify_hash_file,extended_tests=False)
+         if loaded is not False:
+            self.verify_reference=loaded["hashes"]
+         else:
+            raise Exception("unable to load verification hashes")
+         incremental=False
+      else:
+         self.verify_reference=False
+
+      # hash
 
       self.chk=int(0)
       with open(self.inputfile,"rb") as f:
+         # make this a obj attribute
+         self.inputfile_handle=f
+
          if incremental is True:
             self.chk=len(self.hash_obj)-1
             if self.chk < 0:
@@ -304,7 +411,7 @@ class FileHasher():
 
          read_speed=speed(max_size=self.inputfile_stats.st_size,start_chunk=self.chk)
 
-         self.debug(type="INFO:hash_file",msg="- Theading mode: "+str(threading_mode))
+         self.debug(type="INFO:hash_file",msg="- Threading mode: "+str(threading_mode))
 
          if threading_mode == 0:
             # non-threading mode
@@ -315,13 +422,15 @@ class FileHasher():
                   # missing hash
                   self.debug(type="INFO:hash_file",msg=f"- missing chunk[{chunk}]")
                   try:
-                     piece=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
-                     data=hashlib.sha256(piece)
-                     self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest())
+                     data_chunk=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
+                     data_hash=hashlib.sha256(data_chunk)
+                     self.update_hash_idx(chunk=chunk,new_hash=data_hash.hexdigest(),data=data_chunk,local_delta_file=local_delta_file,remote_delta=remote_delta)
                      read_speed.update_run(self.chunk_size)
                   except:
                      self.debug(type="INFO:hash_file",msg="  - failed -> exception")
                      pass
+               elif verify_hash_file is not False:
+                  self.update_hash_idx(chunk=chunk,new_hash=old_data,local_delta_file=local_delta_file,remote_delta=remote_delta)
                else:
                   #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
                   pass
@@ -345,9 +454,9 @@ class FileHasher():
                self.time_avg_ns_read[cpu]=0
                self.time_avg_ns_hash[cpu]=0
                if threading_mode == 1:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True})
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True, "local_delta_file": local_delta_file })
                else:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":False})
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":False, "local_delta_file": local_delta_file })
                self.thread[cpu].start()
 
             next_cpu=0
@@ -393,9 +502,10 @@ class FileHasher():
                   # - get max queue length
                   current_min_queue_length=False
                   current_max_queue_length=0
-                  current_avg_read=0
+                  current_avg_read=False
                   current_min_avg_read=False
                   current_max_avg_read=0
+                  # understand if the avg time to read of a cpu is higher than the avg_read time
                   for cpu in range(0,cpu_count):
                      # get avg read
                      avg_read=self.time_avg_ns_read[cpu]
@@ -413,6 +523,7 @@ class FileHasher():
                      if queue_length > current_max_queue_length:
                         current_max_queue_length=queue_length
                      if queue_length < min_queue_length or current_min_queue_length is False:
+                        # the cpu with the smallest queue wins the next task
                         current_min_queue_length=queue_length
                         next_cpu=cpu
                   if current_min_avg_read == 0:
@@ -427,7 +538,7 @@ class FileHasher():
                      #debug#print("- limit chunk time to avg read")
                      time_per_chunk=current_avg_read/1e9
 
-                  # - correction of chunk time
+                  # - correction of chunk time - we fill the cpu queue faster than processing.
                   if current_max_queue_length >= max_queue_length:
                      # not larger than 250 ms
                      time.sleep(time_per_chunk) # do extra wait.
@@ -439,6 +550,7 @@ class FileHasher():
                         time_per_chunk=0.250
 
                   elif current_min_queue_length < min_queue_length and immune_count == 0:
+                     # queue becomes smaller than the min limit, we can put more load in the queue.
                      time_per_chunk=time_per_chunk*0.9
                      ##print(f"- new time per chunk: {time_per_chunk} sec (decreasing)")
 #                     if cpu_count < max_cpu_count:
@@ -453,13 +565,18 @@ class FileHasher():
                      sensor=cpu_count-1
                      if cpu_count > 1:
                         if avg_read_spread > 20:
+                           # drop dramatic if spread is too high
                            cpu_count=int(cpu_count/2)
                         else:
+                           # proceed slowly to lower threads.
                            cpu_count=cpu_count-1
+                        # mark active +1 one as sensor cpu for the queue overload 
+                        # so self.chunk_buffer[sensor] is 0,(cpu_count-1), therefore cpu_count is the first in the old segment.
                         sensor=cpu_count
 
 #                     print(f"- cut down threads: {cpu_count}")
                   elif avg_read_spread < 1.5:
+                     # ok so add more active threads, if not already all involved
                      if cpu_count < max_cpu_count:
                         cpu_count=cpu_count+1
                         sensor=cpu_count
@@ -467,9 +584,13 @@ class FileHasher():
                   #print(f"- sensor: {cpu_count}/{sensor} {len(self.chunk_buffer[sensor])}")
 
                   if immune_count > 0:
+                     # decrease the immune count, out-dated, as sensor is used now
                      immune_count=immune_count-1
 
                   read_speed.update_run(self.chunk_size)
+
+               elif verify_hash_file is not False:
+                  self.update_hash_idx(chunk=chunk,new_hash=old_data,local_delta_file=local_delta_file)
 
                else:
                   #self.debug(type="INFO:hash_file",msg=f"- already chunk[{chunk}] = {self.hash_obj[chunk]}")
@@ -484,6 +605,48 @@ class FileHasher():
             raise Exception("threading mode unknown")
             
       print(f"\33[2K\r",end='\r')
+
+      print(len(self.mismatched_idx_hashes.keys()))
+
+   def send_patch_frame(self, *, handle=False,chunk=-1,hash_of_chunk=False,data_of_chunk=False,lock=False):
+
+      if handle is not False and hash_of_chunk is not False and data_of_chunk is not False and chunk != -1 and lock is not False:
+         self.debug(type="INFO:send_patch_frame",msg=f"...send patch frame for chunk[{chunk}] data[{len(data_of_chunk)}]")
+
+         data_compressed=zlib.compress(data_of_chunk)
+         if len(data_compressed) < len(data_of_chunk):
+            self.debug(type="INFO:send_patch_frame",msg=f"   - compressed [zlib]")
+            compressed=1
+            data_to_write=data_compressed
+         else:
+            self.debug(type="INFO:send_patch_frame",msg=f"   - uncompressed")
+            compressed=0
+            data_to_write=data_of_chunk
+         
+         data_length=len(data_to_write)
+         self.debug(type="INFO:send_patch_frame",msg=f"   - frame length {data_length}")
+
+         # DONE: conclude how to store
+         # https://stackoverflow.com/questions/7856196/how-to-translate-from-a-hexdigest-to-a-digest-and-vice-versa
+         # h.digest().hex()
+         # bytes.fromhex(h.hexdigest())
+#         with lock:
+#            handle.write(chunk.to_bytes(8,'big'))              # chunk number
+#            handle.write(bytes.fromhex(hash_of_chunk))         # hash
+#            handle.write(compressed.to_bytes(1,'big'))         # compressed ? 0=no, 1=zlib
+#            handle.write(data_length.to_bytes(8,'big'))        # data_frame length
+#            handle.write(data_to_write)                        # data
+
+         data_raw=chunk.to_bytes(8,'big')+bytes.fromhex(hash_of_chunk)+compressed.to_bytes(1,'big')+data_length.to_bytes(8,'big')+data_to_write
+         # TODO: conclude if lock is needed, write is most likely thread safe.
+         #with lock:
+
+#         try:
+#            os.write(handle,data_raw)
+#         except:
+#            exit(255)
+         handle.write(data_raw)
+
 
    def send_msg(self, *, type=False, data={}):
       data["type"]=type
@@ -633,7 +796,7 @@ class FileHasher():
    def patch_chk(self, *, target_file=False, chunk=False, chunk_data=False, chunk_hash=False):
 
       close_file=False
-      if target_file == False:
+      if target_file is False:
          target_file=open(self.inputfile, 'r+b')
          close_file=True
 
@@ -652,7 +815,7 @@ class FileHasher():
 
    def apply_stats(self, *, stats=False):
 
-      if stats != False:
+      if stats is not False:
          with open(self.inputfile,"r+b") as target_file:
             target_file.truncate(stats.st_size)
 
@@ -660,7 +823,87 @@ class FileHasher():
          os.chown(self.inputfile,stats.st_uid,stats.st_gid)
          os.utime(self.inputfile,ns=(stats.st_atime_ns,stats.st_mtime_ns))
 
-   def patch(self, *, delta_file=False):
+   def patch(self, *, delta_file=False,delta_stream_handle=False):
+
+      if delta_file is False and delta_stream_handle is False:
+         raise Exception("no delta file nor stream provided")
+      elif delta_file is not False and os.path.isfile(delta_file) is False and delta_stream_handle is False:
+         raise Exception("delta file do not exist or has issues")
+      elif delta_file is not False and delta_stream_handle is not False:
+         raise Exception("delta file and stream provided - thats not implemented.")
+      elif delta_file is not False:
+         # 1) open delta_file
+         self.debug(type="INFO:patch",msg=f"open delta_file: {delta_file}")
+         patch_data_file=open(delta_file, 'rb')
+      elif delta_stream_handle is not False:
+         # 1) open delta_file_stream
+         self.debug(type="INFO:patch",msg=f"using delta_file_stream")
+         patch_data_file=delta_stream_handle
+      else:
+         raise Exception("not idea how you got here, but thats not good.")
+
+      # 2) read header 
+
+      with open(self.inputfile, 'r+b') as target_file:
+         # 3) read patch frames and apply
+         patch_file_number_of_chunks=int.from_bytes(patch_data_file.read(8),'big')
+         patch_file_format_version=int.from_bytes(patch_data_file.read(8),'big')
+         patch_file_chunk_size=int.from_bytes(patch_data_file.read(8),'big')
+         patch_file_hash_length=int.from_bytes(patch_data_file.read(8),'big')
+         patch_file_stats_length=int.from_bytes(patch_data_file.read(8),'big')
+         patch_file_stats_data=patch_data_file.read(patch_file_stats_length)
+         patch_file_stats=pickle.loads(patch_file_stats_data)
+
+         print(f"- patch/run: #ofChunks[{patch_file_number_of_chunks}] - version[{patch_file_format_version}/{self.patch_file_version_int}] - chunk size[{patch_file_chunk_size}/{self.chunk_size}] - hash length[{patch_file_hash_length}]")
+         if patch_file_format_version != self.patch_file_version_int or self.chunk_size != patch_file_chunk_size:
+            raise Exception("version/chunk size mismatch.")
+         
+         while True:
+            try:
+               frame_chunk = int.from_bytes(patch_data_file.read(8),'big')
+               frame_hash_hexdigest = patch_data_file.read(patch_file_hash_length).hex()
+               frame_compressed = int.from_bytes(patch_data_file.read(1),'big')
+               frame_data_length = int.from_bytes(patch_data_file.read(8),'big')
+               if frame_data_length > 0:
+                  print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
+                  print(f"  - digest patch[{frame_hash_hexdigest}]")
+                  frame_data_raw = patch_data_file.read(frame_data_length)
+
+                  old_hash=self.hash_obj.get(frame_chunk,False)
+                  if old_hash is False or old_hash != frame_hash_hexdigest:
+                     # uncompress if needed
+                     if frame_compressed == 0:
+                        frame_write_data=frame_data_raw
+                     elif frame_compressed == 1:
+                        frame_write_data=zlib.decompress(frame_data_raw)
+                     else:
+                        raise Exception(f"Delta Frame with unknown compression type {frame_compressed}")
+                     # hash
+                     frame_write_data_hash=hashlib.sha256(frame_write_data).hexdigest()
+                     print(f"  - digest write[{frame_write_data_hash}]")
+                     if frame_hash_hexdigest != frame_write_data_hash:
+                        raise Exception("Delta Frame hash does not match shipped data.")
+                     # check if we need to write
+                     target_file.seek(frame_chunk*self.chunk_size)
+                     target_file.write(frame_write_data)
+                     self.update_hash_idx(chunk=frame_chunk,new_hash=frame_hash_hexdigest)
+                  else:
+                     print(f"  - digest local[{frame_hash_hexdigest}] match")
+               else:
+                  break
+            except:
+               break
+
+      patch_data_file.close()
+
+      # apply/update metadata
+      print(f"- truncate to "+str(patch_file_stats.st_size)+".")
+      self.apply_stats(stats=patch_file_stats)
+
+      self._refresh_inputfile_stats()
+      print(f"- Done.")
+
+   def patch_old(self, *, delta_file=False):
 
       if delta_file == False:
          raise Exception("no delta file provided")
@@ -812,6 +1055,7 @@ version="1.0.18"
 
 if args.version is True:
    print(f"{version}")
+
 elif args.show_hashes is not False:
    if os.path.isfile(args.show_hashes):
       #print(f"load hashes from: {args.show_hashes}")
@@ -824,57 +1068,36 @@ elif args.show_hashes is not False:
 
 elif args.remote_patching is True:
    print(f"- Remote patching...")
+   # local file setup
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    atexit.register(save_hash_file)
 
+   # remote connection
    import paramiko
    ssh = paramiko.SSHClient()
    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-   if args.remote_password == False:
+   if args.remote_password is False:
       private_key = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
       ssh.connect(args.remote_hostname, username=args.remote_username, pkey=private_key, look_for_keys=False)
    else:
       ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password)
    
    # skip version check if already done. set FILEHASHER_SKIP_VERSION
-   if os.environ.get("FILEHASHER_SKIP_VERSION",False) == False:
+   if os.environ.get("FILEHASHER_SKIP_VERSION",False) is False:
       ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
       remote_version=ssh_stdout.readline().strip()
    else:
       remote_version=version
 
    if remote_version == version:
+      # local and remote version match
       with open(FH.hashfile,"rb") as handle:
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+         # send local hash file to remote
          ssh_stdin.write(handle.read())
 
-         patch_data=FH.receive_msg(pipe=ssh_stdout)
-         #print(patch_data)
-         if patch_data["type"] == "metadata":
-            FH.apply_stats(stats=patch_data["stats"])
-         else:
-            print(patch_data)
-            raise Exception("no metadata sent")
-            exit(1)
-
-         loop=True
-         while loop:
-
-            # read next
-            data=FH.receive_msg(pipe=ssh_stdout)
-
-            if data["type"] == "chunk":
-               print(f"chunk - "+str(data["chunk"]))
-               FH.patch_chk(chunk=data["chunk"],chunk_data=data["chunk_data"],chunk_hash=data["chunk_hash"])
-            else:
-               loop=False
-
-         if patch_data["type"] == "metadata":
-            FH.apply_stats(stats=patch_data["stats"])
-         else:
-            print(patch_data)
-            raise Exception("no metadata sent")
-            exit(1)
+         # patch with remote stream
+         FH.patch(delta_stream_handle=ssh_stdout)
 
    else:
       raise Exception("local and remote version do not match")
@@ -882,9 +1105,9 @@ elif args.remote_patching is True:
 elif args.inputfile is False:
    print("please use -h for help.")
    exit(0)
+
 else:
    # print (args)
-
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
@@ -895,12 +1118,23 @@ else:
    signal.signal(signal.SIGINT, sigterm_handler)
    signal.signal(signal.SIGHUP, sigterm_handler)
 
-   if args.verify_against is False and args.apply_delta_file is False:
-      # normal hashing 
+   if args.apply_delta_file is False:
+
+      # normal hashing + local delta + remote delta
       if args.force_refresh is True:
-         FH.hash_file(incremental=False,threading_mode=args.thread_mode)
+         FH.hash_file(incremental=False,threading_mode=args.thread_mode,verify_hash_file=args.verify_against,local_delta_file=args.delta_file,remote_delta=args.remote_delta)
       else:
-         FH.hash_file(incremental=True,threading_mode=args.thread_mode)
+         FH.hash_file(incremental=True,threading_mode=args.thread_mode,verify_hash_file=args.verify_against,local_delta_file=args.delta_file,remote_delta=args.remote_delta)
+
+      # TODO: check remote-delta response.
+      # verify_against result
+      if args.verify_against is not False:
+         if len(FH.mismatched_idx)>0:
+            # there is a delta exit = 0
+            exit(0)
+         else:
+            # there is no delta exit != 0
+            exit(1)
 
       # feedback via exit code if there was a hash update.
       if FH.save_hashes is True:
@@ -908,8 +1142,9 @@ else:
       else:
          exit(0)
 
-   elif args.verify_against is not False:
-      # verify branch
+   elif args.verify_against is not False and False is True:
+
+      # verify branch and option to write delta file and option for remote delta
       FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file,chunk_limit=args.chunk_limit,remote_delta=args.remote_delta)
       if args.delta_file is not False:
          if len(FH.mismatched_idx)>0:
