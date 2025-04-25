@@ -655,7 +655,10 @@ class FileHasher():
 #            os.write(handle,data_raw)
 #         except:
 #            exit(255)
-         handle.write(data_raw)
+         if self.remote_delta_mode is False:
+            handle.write(data_raw)
+         else:
+            self.send2stdout(data=data_raw)
 
 
    def send_msg(self, *, type=False, data={}):
