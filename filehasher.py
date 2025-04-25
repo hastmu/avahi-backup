@@ -335,7 +335,7 @@ class FileHasher():
    def send2stdout(self,data):
       os.write(sys.stdout.fileno(), data)
 
-   def hash_thread(self, *, cpu=-1,Read_file=False, local_delta_file=False):
+   def hash_thread(self, *, cpu=-1,Read_file=False, local_delta_file=False,remote_delta=False):
 
       self.debug(type="INFO:hash_thread",msg=f"- hashing thread cpu[{cpu}] - start")
 
@@ -357,7 +357,7 @@ class FileHasher():
                if piece is not False:
                   del self.chunk_buffer[cpu][chunk]
                   data=hashlib.sha256(piece)
-                  self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest(),data=piece,local_delta_file=local_delta_file)
+                  self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest(),data=piece,local_delta_file=local_delta_file,remote_delta=remote_delta)
 
             time.sleep(0.001)
 
@@ -454,9 +454,9 @@ class FileHasher():
                self.time_avg_ns_read[cpu]=0
                self.time_avg_ns_hash[cpu]=0
                if threading_mode == 1:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True, "local_delta_file": local_delta_file })
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":True, "local_delta_file": local_delta_file, "remote_delta": remote_delta })
                else:
-                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":False, "local_delta_file": local_delta_file })
+                  self.thread[cpu]=threading.Thread(target=self.hash_thread,kwargs={"cpu":cpu, "Read_file":False, "local_delta_file": local_delta_file, "remote_delta": remote_delta })
                self.thread[cpu].start()
 
             next_cpu=0
