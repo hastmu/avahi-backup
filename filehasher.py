@@ -325,6 +325,9 @@ class FileHasher():
 
                      self.remote_delta_header_sent=True
 
+               while self.remote_delta_header_sent is not True:
+                  time.sleep(1)
+
                self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send frame")
                self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
 
