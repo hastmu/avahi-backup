@@ -123,7 +123,21 @@ ${TOOL} --inputfile "${DEMO_SRC}" --hashfile "${DEMO_SRC}.remote.${CHUNK_SIZE}.$
 ${TOOL} --inputfile "${DEMO_SRC}" --hashfile "${DEMO_SRC}.remote.${CHUNK_SIZE}.${mode}" --min-chunk-size ${CHUNK_SIZE} --thread-mode ${mode} \
          --verify-against "${DEMO_SRC}.2.remote.${CHUNK_SIZE}.${mode}" --remote-delta > "${DEMO_SRC}.${CHUNK_SIZE}.remote-2.${mode}.delta" --debug
 
+cp "${DEMO_SRC}.2" "${DEMO_SRC}.2.file" &
+cp "${DEMO_SRC}.2" "${DEMO_SRC}.2.remote" &
+
 ls -lah  "${DEMO_SRC}.${CHUNK_SIZE}.remote.${mode}.delta" "${DEMO_SRC}.${CHUNK_SIZE}.remote-2.${mode}.delta"
+md5sum "${DEMO_SRC}.${CHUNK_SIZE}.remote.${mode}.delta" "${DEMO_SRC}.${CHUNK_SIZE}.remote-2.${mode}.delta"
+wait
+
+${TOOL} --inputfile "${DEMO_SRC}.2.file" --hashfile "${DEMO_SRC}.2.remote.${CHUNK_SIZE}.${mode}" --min-chunk-size ${CHUNK_SIZE} --thread-mode ${mode} \
+--apply-delta "${DEMO_SRC}.${CHUNK_SIZE}.remote.${mode}.delta" --debug 
+
+${TOOL} --inputfile "${DEMO_SRC}.2.remote" --hashfile "${DEMO_SRC}.2.remote2.${CHUNK_SIZE}.${mode}" --min-chunk-size ${CHUNK_SIZE} --thread-mode ${mode} \
+--apply-delta "${DEMO_SRC}.${CHUNK_SIZE}.remote-2.${mode}.delta" --debug 
+
+md5sum "${DEMO_SRC}" "${DEMO_SRC}.2.file" "${DEMO_SRC}.2.remote"
+
 
 echo "error: ${error}"
 exit 0

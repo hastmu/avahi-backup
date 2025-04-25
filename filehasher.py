@@ -841,7 +841,7 @@ class FileHasher():
       if delta_file is False and delta_stream_handle is False:
          raise Exception("no delta file nor stream provided")
       elif delta_file is not False and os.path.isfile(delta_file) is False and delta_stream_handle is False:
-         raise Exception("delta file do not exist or has issues")
+         raise Exception(f"delta file do not exist or has issues: {delta_file}")
       elif delta_file is not False and delta_stream_handle is not False:
          raise Exception("delta file and stream provided - thats not implemented.")
       elif delta_file is not False:
@@ -850,7 +850,7 @@ class FileHasher():
          patch_data_file=open(delta_file, 'rb')
       elif delta_stream_handle is not False:
          # 1) open delta_file_stream
-         self.debug(type="INFO:patch",msg=f"using delta_file_stream")
+         self.debug(type="INFO:patch",msg="using delta_file_stream")
          patch_data_file=delta_stream_handle
       else:
          raise Exception("not idea how you got here, but thats not good.")
