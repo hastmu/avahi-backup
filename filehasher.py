@@ -195,6 +195,7 @@ class FileHasher():
       self.local_delta_file_handle=False
       self.verify_reference=False
       self.remote_delta_header_sent=False
+      self.remote_delta_mode=False
 
       # get inputfile, stats and check if exists.
       if inputfile is not False:
@@ -378,6 +379,10 @@ class FileHasher():
       self.mismatched_idx_hashes={}
       # for delta
       self.remote_delta_header_sent=False
+      if remote_delta is False:
+         self.remote_delta_mode=False
+      else:
+         self.remote_delta_mode=True
 
       # TODO: Revisit incremental with the new index missing scheme.
       if incremental is False:
@@ -428,7 +433,8 @@ class FileHasher():
                      data_chunk=self._read_one_chunk(f,chunk_size=self.chunk_size,seek_chunk=chunk)
                      data_hash=hashlib.sha256(data_chunk)
                      self.update_hash_idx(chunk=chunk,new_hash=data_hash.hexdigest(),data=data_chunk,local_delta_file=local_delta_file,remote_delta=remote_delta)
-                     read_speed.update_run(self.chunk_size)
+                     if self.remote_delta_mode is False:
+                        read_speed.update_run(self.chunk_size)
                   except:
                      self.debug(type="INFO:hash_file",msg="  - failed -> exception")
                      pass
@@ -590,7 +596,8 @@ class FileHasher():
                      # decrease the immune count, out-dated, as sensor is used now
                      immune_count=immune_count-1
 
-                  read_speed.update_run(self.chunk_size)
+                  if self.remote_delta_mode is False:
+                     read_speed.update_run(self.chunk_size)
 
                elif verify_hash_file is not False:
                   self.update_hash_idx(chunk=chunk,new_hash=old_data,local_delta_file=local_delta_file)
@@ -607,9 +614,9 @@ class FileHasher():
          else:
             raise Exception("threading mode unknown")
             
-      print(f"\33[2K\r",end='\r')
-
-      print(len(self.mismatched_idx_hashes.keys()))
+      if self.remote_delta_mode is False:
+         print(f"\33[2K\r",end='\r')
+         print(len(self.mismatched_idx_hashes.keys()))
 
    def send_patch_frame(self, *, handle=False,chunk=-1,hash_of_chunk=False,data_of_chunk=False,lock=False):
 
@@ -855,12 +862,13 @@ class FileHasher():
          patch_file_hash_length=int.from_bytes(patch_data_file.read(8),'big')
          patch_file_stats_length=int.from_bytes(patch_data_file.read(8),'big')
          patch_file_stats_data=patch_data_file.read(patch_file_stats_length)
-         patch_file_stats=pickle.loads(patch_file_stats_data)
 
          print(f"- patch/run: #ofChunks[{patch_file_number_of_chunks}] - version[{patch_file_format_version}/{self.patch_file_version_int}] - chunk size[{patch_file_chunk_size}/{self.chunk_size}] - hash length[{patch_file_hash_length}]")
          if patch_file_format_version != self.patch_file_version_int or self.chunk_size != patch_file_chunk_size:
             raise Exception("version/chunk size mismatch.")
-         
+
+         patch_file_stats=pickle.loads(patch_file_stats_data)
+
          while True:
             try:
                frame_chunk = int.from_bytes(patch_data_file.read(8),'big')
@@ -939,10 +947,11 @@ class FileHasher():
 
    def feedback(self):
       # save hashes ?
-      if self.save_hashes == True:
-         print(f"{self.loaded_hashes} - updated - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
-      else:
-         print(f"{self.loaded_hashes} - unchanged - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
+      if self.remote_delta_mode is False:
+         if self.save_hashes is True:
+            print(f"{self.loaded_hashes} - updated - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
+         else:
+            print(f"{self.loaded_hashes} - unchanged - hashfile[{len(self.hash_obj)}:{self.hashfile}] - chunk-size[{self.chunk_size}]")
 
    def debug(self,*,type="INFO",msg="-"):
       if self._debug == True:
