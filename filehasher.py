@@ -1051,7 +1051,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.0.18"
+version="1.1.0"
 
 if args.version is True:
    print(f"{version}")
