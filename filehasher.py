@@ -1133,10 +1133,10 @@ elif args.remote_patching is True:
          ssh_stdin.write(handle.read())
 
          # patch with remote stream - sys.stdin.buffer
-         #print(ssh_stdout.read(40))
-         with open("debug.stream","wb") as d:
-            d.write(ssh_stdout.read())
-         print(ssh_stderr.read())
+         print(ssh_stdout.read(100))
+#         with open("debug.stream","wb") as d:
+#            d.write(ssh_stdout.read())
+#         print(ssh_stderr.read())
          FH.patch(delta_stream_handle=ssh_stdout)
 
    else:
