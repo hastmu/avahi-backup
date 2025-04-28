@@ -651,15 +651,17 @@ class FileHasher():
          # TODO: conclude if lock is needed, write is most likely thread safe.
          #with lock:
 
-#         try:
-#            os.write(handle,data_raw)
-#         except:
-#            exit(255)
          if self.remote_delta_mode is False:
             handle.write(data_raw)
          else:
             self.send2stdout(data=data_raw)
 
+   def send_data(self,*, handle=False, data=False):
+
+      if self.remote_delta_mode is False:
+         handle.write(data_raw)
+      else:
+         self.send2stdout(data=data_raw)
 
    def send_msg(self, *, type=False, data={}):
       data["type"]=type
@@ -836,6 +838,19 @@ class FileHasher():
          os.chown(self.inputfile,stats.st_uid,stats.st_gid)
          os.utime(self.inputfile,ns=(stats.st_atime_ns,stats.st_mtime_ns))
 
+   def read_patch_stream(self,handle,size):
+
+      if self.remote_delta_mode is False:
+         # file
+         self.debug(type="INFO:read_patch_stream",msg=f"file mode {size}")
+         data=handle.read(size)         
+      else:
+         # ssh stdout
+         self.debug(type="INFO:read_patch_stream",msg=f"stream mode {size}")
+         data=handle.channel.recv(size)
+      self.debug(type="INFO:read_patch_stream",msg=f"data: {data}")
+      return data
+
    def patch(self, *, delta_file=False,delta_stream_handle=False):
 
       if delta_file is False and delta_stream_handle is False:
@@ -848,40 +863,44 @@ class FileHasher():
          # 1) open delta_file
          self.debug(type="INFO:patch",msg=f"open delta_file: {delta_file}")
          patch_data_file=open(delta_file, 'rb')
+         self.remote_delta_mode=False
       elif delta_stream_handle is not False:
          # 1) open delta_file_stream
          self.debug(type="INFO:patch",msg="using delta_file_stream")
          patch_data_file=delta_stream_handle
+         self.remote_delta_mode=True
       else:
          raise Exception("not idea how you got here, but thats not good.")
 
       # 2) read header 
+      patch_file_number_of_chunks=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+      patch_file_format_version=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+      patch_file_chunk_size=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+      patch_file_hash_length=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+      patch_file_stats_length=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+      patch_file_stats_data=self.read_patch_stream(patch_data_file,patch_file_stats_length)
+
+      print(f"- patch/run: #ofChunks[{patch_file_number_of_chunks}] - version[{patch_file_format_version}/{self.patch_file_version_int}] - chunk size[{patch_file_chunk_size}/{self.chunk_size}] - hash length[{patch_file_hash_length}]")
+      if patch_file_format_version != self.patch_file_version_int or self.chunk_size != patch_file_chunk_size:
+         raise Exception("version/chunk size mismatch.")
+
+      raise Exception("version/chunk size mismatch.")
+
+      patch_file_stats=pickle.loads(patch_file_stats_data)
 
       with open(self.inputfile, 'r+b') as target_file:
          # 3) read patch frames and apply
-         patch_file_number_of_chunks=int.from_bytes(patch_data_file.read(8),'big')
-         patch_file_format_version=int.from_bytes(patch_data_file.read(8),'big')
-         patch_file_chunk_size=int.from_bytes(patch_data_file.read(8),'big')
-         patch_file_hash_length=int.from_bytes(patch_data_file.read(8),'big')
-         patch_file_stats_length=int.from_bytes(patch_data_file.read(8),'big')
-         patch_file_stats_data=patch_data_file.read(patch_file_stats_length)
-
-         print(f"- patch/run: #ofChunks[{patch_file_number_of_chunks}] - version[{patch_file_format_version}/{self.patch_file_version_int}] - chunk size[{patch_file_chunk_size}/{self.chunk_size}] - hash length[{patch_file_hash_length}]")
-         if patch_file_format_version != self.patch_file_version_int or self.chunk_size != patch_file_chunk_size:
-            raise Exception("version/chunk size mismatch.")
-
-         patch_file_stats=pickle.loads(patch_file_stats_data)
 
          while True:
             try:
-               frame_chunk = int.from_bytes(patch_data_file.read(8),'big')
-               frame_hash_hexdigest = patch_data_file.read(patch_file_hash_length).hex()
-               frame_compressed = int.from_bytes(patch_data_file.read(1),'big')
-               frame_data_length = int.from_bytes(patch_data_file.read(8),'big')
+               frame_chunk = int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
+               frame_hash_hexdigest = self.read_patch_stream(patch_data_file,patch_file_hash_length).hex()
+               frame_compressed = int.from_bytes(self.read_patch_stream(patch_data_file,1),'big')
+               frame_data_length = int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
                if frame_data_length > 0:
                   print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
                   print(f"  - digest patch[{frame_hash_hexdigest}]")
-                  frame_data_raw = patch_data_file.read(frame_data_length)
+                  frame_data_raw = self.read_patch_stream(patch_data_file,frame_data_length)
 
                   old_hash=self.hash_obj.get(frame_chunk,False)
                   if old_hash is False or old_hash != frame_hash_hexdigest:
@@ -1107,11 +1126,17 @@ elif args.remote_patching is True:
    if remote_version == version:
       # local and remote version match
       with open(FH.hashfile,"rb") as handle:
-         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+         FH.debug(type="INFO:ssh.exec_command",msg="filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
+
+         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta", get_pty=True)
          # send local hash file to remote
          ssh_stdin.write(handle.read())
 
-         # patch with remote stream
+         # patch with remote stream - sys.stdin.buffer
+         #print(ssh_stdout.read(40))
+         with open("debug.stream","wb") as d:
+            d.write(ssh_stdout.read())
+         print(ssh_stderr.read())
          FH.patch(delta_stream_handle=ssh_stdout)
 
    else:
@@ -1132,6 +1157,8 @@ else:
    signal.signal(signal.SIGTERM, sigterm_handler)
    signal.signal(signal.SIGINT, sigterm_handler)
    signal.signal(signal.SIGHUP, sigterm_handler)
+
+   print(b'1000')
 
    if args.apply_delta_file is False:
 
