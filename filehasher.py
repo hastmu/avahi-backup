@@ -1158,7 +1158,7 @@ else:
    signal.signal(signal.SIGINT, sigterm_handler)
    signal.signal(signal.SIGHUP, sigterm_handler)
 
-   print(b'1000')
+   print(b'\x01\x00\x00\x00\x00\x00\x00\x00')
 
    if args.apply_delta_file is False:
 
