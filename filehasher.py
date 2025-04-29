@@ -69,6 +69,10 @@ args = parser.parse_args()
 def save_hash_file():
    # print("---save hash---")
    FH.save_hash()
+   try:
+      ssh.close()
+   except:
+      pass
 
 
 def sigterm_handler(_signal, _stack_frame):
@@ -1189,6 +1193,7 @@ elif args.remote_patching is True:
 #            d.write(ssh_stdout.read())
 #         print(ssh_stderr.read())
          FH.patch(delta_stream_handle=ssh_stdout)
+         ssh.close()
 
    else:
       raise Exception("local and remote version do not match")
