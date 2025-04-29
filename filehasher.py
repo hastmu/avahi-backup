@@ -382,6 +382,8 @@ class FileHasher():
       self.mismatched_idx=[]
       self.mismatched_idx_hashes={}
       # for delta
+      self.count_compressed_frames=0
+      self.count_uncompressed_frames=0
       self.remote_delta_header_sent=False
       if remote_delta is False:
          self.remote_delta_mode=False
@@ -631,13 +633,23 @@ class FileHasher():
          self.debug(type="INFO:send_patch_frame",msg=f"...send patch frame for chunk[{chunk}] data[{len(data_of_chunk)}]")
 
          if len(data_of_chunk) > 0:
-            data_compressed=zlib.compress(data_of_chunk)
-            if len(data_compressed) < len(data_of_chunk):
+            if (self.count_compressed_frames+self.count_uncompressed_frames) > 10 and (self.count_compressed_frames/(self.count_compressed_frames+self.count_uncompressed_frames)) < 0.1:
+               # > 10 frames processed but less than 10% compressed -> turn compression off.
+               compression_off=True
+            else:
+               compression_off=False
+
+            data_compressed=b''
+            if compression_off is False:
+               data_compressed=zlib.compress(data_of_chunk)
+            if len(data_compressed) < len(data_of_chunk)*0.9 and compression_off is False:
                self.debug(type="INFO:send_patch_frame",msg=f"   - compressed [zlib]")
                compressed=1
+               self.count_compressed_frames+=1
                data_to_write=data_compressed
             else:
                self.debug(type="INFO:send_patch_frame",msg=f"   - uncompressed")
+               self.count_uncompressed_frames+=1
                compressed=0
                data_to_write=data_of_chunk
          elif eof is False:
