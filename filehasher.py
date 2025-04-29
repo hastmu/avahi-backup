@@ -642,7 +642,7 @@ class FileHasher():
                data_to_write=data_of_chunk
          elif eof is False:
             # progress chunk
-            compressed=2
+            compressed=3
             data_to_write=b''
          else:
             # end chunk
@@ -945,9 +945,10 @@ class FileHasher():
                else:
                   if frame_compressed == 2:
                      # progress chunk
-                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
+                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - progress chunk")
                   else:
                      # end
+                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - end chunk")
                      break
 
             except:
