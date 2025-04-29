@@ -1138,9 +1138,7 @@ elif args.remote_patching is True:
          # send local hash file to remote
          ssh_stdin.write(handle.read())
 
-         print(ssh_stdout.read())
-
-         print(ssh_stdout.read())
+         print(ssh_stdout.read(8))
          # patch with remote stream - sys.stdin.buffer
 #         while ssh_stdout.channel.recv_ready() is not True:
 #            time.sleep(0.1)
@@ -1161,7 +1159,7 @@ elif args.inputfile is False:
    exit(0)
 
 else:
-   print (args)
+   #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    a=0
    print(a.to_bytes(8,'big'))
