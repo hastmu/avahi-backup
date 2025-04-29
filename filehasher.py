@@ -1152,7 +1152,7 @@ elif args.remote_patching is True:
 #         with open("debug.stream","wb") as d:
 #            d.write(ssh_stdout.read())
 #         print(ssh_stderr.read())
-         #FH.patch(delta_stream_handle=ssh_stdout)
+         FH.patch(delta_stream_handle=ssh_stdout)
 
    else:
       raise Exception("local and remote version do not match")
@@ -1164,13 +1164,13 @@ elif args.inputfile is False:
 else:
    #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
-   a=1
+   #a=1
 #   print(a.to_bytes(8,'big'))
    #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
    #a=2
    #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
 #   print(a.to_bytes(8,'big'))
-   FH.send2stdout(a.to_bytes(8,'big'))
+   #FH.send2stdout(a.to_bytes(8,'big'))
 
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
@@ -1207,18 +1207,6 @@ else:
          exit(1)
       else:
          exit(0)
-
-   elif args.verify_against is not False and False is True:
-
-      # verify branch and option to write delta file and option for remote delta
-      FH.verify_against(hash_filename=args.verify_against,write_delta_file=args.delta_file,chunk_limit=args.chunk_limit,remote_delta=args.remote_delta)
-      if args.delta_file is not False:
-         if len(FH.mismatched_idx)>0:
-            # there is a delta exit = 0
-            exit(0)
-         else:
-            # there is no delta exit != 0
-            exit(1)
 
    elif args.apply_delta_file is not False:
       print(f"- file to be patched: {args.inputfile}")
