@@ -312,6 +312,7 @@ class FileHasher():
                   # always locked to be sequential - for the first header.
                   if self.remote_delta_header_sent is False:
                      self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send header")
+                     print("header")
                      # send header
 
                      a=0
@@ -330,6 +331,7 @@ class FileHasher():
                   time.sleep(1)
 
                self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send frame")
+               print("frame")
                #self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
 
          else:
@@ -1087,7 +1089,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.4"
+version="1.1.5"
 
 if args.version is True:
    print(f"{version}")
@@ -1131,15 +1133,18 @@ elif args.remote_patching is True:
          FH.debug(type="INFO:ssh.exec_command",msg="filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
 
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta", get_pty=True)
-         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against a --remote-delta", get_pty=True)
+#         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against a --remote-delta", get_pty=True)
 #         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("uname -a", get_pty=True)
          # send local hash file to remote
-#         ssh_stdin.write(handle.read())
+         ssh_stdin.write(handle.read())
 
          # patch with remote stream - sys.stdin.buffer
-         #while ssh_stdout.channel.recv_ready() is not True:
-         #   time.sleep(0.1)
-         print(ssh_stdout.channel.recv(8))
+         while ssh_stdout.channel.recv_ready() is not True:
+            time.sleep(0.1)
+         import binascii
+         #hexString = str(binascii.hexlify(ssh_stdout.channel.recv(8)))          
+         hexString = str(binascii.hexlify(ssh_stdout.read(8)))          
+         print(hexString.split("'")[1].upper().replace('0X','') )
 #         with open("debug.stream","wb") as d:
 #            d.write(ssh_stdout.read())
 #         print(ssh_stderr.read())
