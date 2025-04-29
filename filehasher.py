@@ -330,7 +330,7 @@ class FileHasher():
                   time.sleep(1)
 
                self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send frame")
-               self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
+               #self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
 
          else:
             #self.debug(type="INFO:update_hash_idx",msg=f"  - verify input hash[{new_hash}] reference hash[{reference_hash}] - match")
@@ -1087,7 +1087,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.3"
+version="1.1.4"
 
 if args.version is True:
    print(f"{version}")
@@ -1135,7 +1135,7 @@ elif args.remote_patching is True:
          ssh_stdin.write(handle.read())
 
          # patch with remote stream - sys.stdin.buffer
-         print(ssh_stdout.read(100))
+       #  print(ssh_stdout.read(100))
 #         with open("debug.stream","wb") as d:
 #            d.write(ssh_stdout.read())
 #         print(ssh_stderr.read())
