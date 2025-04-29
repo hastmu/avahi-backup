@@ -260,6 +260,27 @@ class FileHasher():
 
    def update_hash_idx(self, *, chunk, new_hash,data=None,local_delta_file=False,remote_delta=False):
 
+
+      # send header if remote_delta
+      if remote_delta is not False and self.remote_delta_header_sent is False:
+         # lock
+         with self.lock_delta_stream:
+            # always locked to be sequential - for the first header.
+            if self.remote_delta_header_sent is False:
+               self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send header")
+               a=0
+               self.send2stdout(a.to_bytes(8,'big'))                             # number of chunks in file
+               self.send2stdout(self.patch_file_version_int.to_bytes(8,'big'))   # chunk file version
+               self.send2stdout(self.chunk_size.to_bytes(8,'big'))               # chunk_size
+               self.send2stdout(len(bytes.fromhex(new_hash)).to_bytes(8,'big'))  # length of hash
+               stats=pickle.dumps(self.inputfile_stats, protocol=pickle.HIGHEST_PROTOCOL)
+               self.send2stdout(len(stats).to_bytes(8,'big'))                    # length of hash
+               self.send2stdout(stats)                                           # stats.
+
+               self.remote_delta_header_sent=True
+
+      # update hash idx
+
       old_hash=self.hash_obj.get(chunk,False)
       if old_hash is False or old_hash != new_hash:
          # only add and flag as updated if there is a real change.
@@ -308,31 +329,8 @@ class FileHasher():
 
             if remote_delta is not False:
 
-               with self.lock_delta_stream:
-                  # always locked to be sequential - for the first header.
-                  if self.remote_delta_header_sent is False:
-                     self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send header")
-                     print("header")
-                     # send header
-
-                     a=0
-                     
-                     self.send2stdout(a.to_bytes(8,'big'))                             # number of chunks in file
-                     self.send2stdout(self.patch_file_version_int.to_bytes(8,'big'))   # chunk file version
-                     self.send2stdout(self.chunk_size.to_bytes(8,'big'))               # chunk_size
-                     self.send2stdout(len(bytes.fromhex(new_hash)).to_bytes(8,'big'))  # length of hash
-                     stats=pickle.dumps(self.inputfile_stats, protocol=pickle.HIGHEST_PROTOCOL)
-                     self.send2stdout(len(stats).to_bytes(8,'big'))                    # length of hash
-                     self.send2stdout(stats)                                           # stats.
-
-                     self.remote_delta_header_sent=True
-
-               while self.remote_delta_header_sent is not True:
-                  time.sleep(1)
-
                self.debug(type="INFO:update_hash_idx",msg=f"    - remote_delta: send frame")
-               print("frame")
-               #self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
+               self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=data,hash_of_chunk=new_hash,lock=self.lock_delta_stream)
 
          else:
             #self.debug(type="INFO:update_hash_idx",msg=f"  - verify input hash[{new_hash}] reference hash[{reference_hash}] - match")
@@ -851,7 +849,9 @@ class FileHasher():
       else:
          # ssh stdout
          self.debug(type="INFO:read_patch_stream",msg=f"stream mode {size}")
-         data=handle.read(size)
+         data=b''
+         while len(data) < size:
+            data+=handle.read(size-len(data))
          #while not handle.channel.exit_status_ready():
          #   if handle.channel.recv_ready():
          #      data=handle.channel.recv(size)
