@@ -1158,10 +1158,11 @@ elif args.inputfile is False:
    print("please use -h for help.")
    exit(0)
 
+else:
    print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    FH.send2stdout("hello")
-   
+
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
       exit(0)
