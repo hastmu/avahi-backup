@@ -337,7 +337,9 @@ class FileHasher():
             pass
 
    def send2stdout(self,data):
-      os.write(sys.stdout.fileno(), data)
+      #os.write(sys.stdout.fileno(), data)
+      sys.stdout.buffer.write(data)
+      
 
    def hash_thread(self, *, cpu=-1,Read_file=False, local_delta_file=False,remote_delta=False):
 
@@ -1085,7 +1087,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.2"
+version="1.1.3"
 
 if args.version is True:
    print(f"{version}")
