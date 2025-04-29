@@ -334,6 +334,8 @@ class FileHasher():
 
          else:
             #self.debug(type="INFO:update_hash_idx",msg=f"  - verify input hash[{new_hash}] reference hash[{reference_hash}] - match")
+            if remote_delta is not False:
+               self.send_patch_frame(handle=sys.stdout.fileno(),chunk=chunk,data_of_chunk=b'',hash_of_chunk=new_hash,lock=self.lock_delta_stream)
             pass
 
    def send2stdout(self,data):
@@ -625,15 +627,20 @@ class FileHasher():
       if handle is not False and hash_of_chunk is not False and data_of_chunk is not False and chunk != -1 and lock is not False:
          self.debug(type="INFO:send_patch_frame",msg=f"...send patch frame for chunk[{chunk}] data[{len(data_of_chunk)}]")
 
-         data_compressed=zlib.compress(data_of_chunk)
-         if len(data_compressed) < len(data_of_chunk):
-            self.debug(type="INFO:send_patch_frame",msg=f"   - compressed [zlib]")
-            compressed=1
-            data_to_write=data_compressed
+         if len(data_of_chunk) > 0:
+            data_compressed=zlib.compress(data_of_chunk)
+            if len(data_compressed) < len(data_of_chunk):
+               self.debug(type="INFO:send_patch_frame",msg=f"   - compressed [zlib]")
+               compressed=1
+               data_to_write=data_compressed
+            else:
+               self.debug(type="INFO:send_patch_frame",msg=f"   - uncompressed")
+               compressed=0
+               data_to_write=data_of_chunk
          else:
-            self.debug(type="INFO:send_patch_frame",msg=f"   - uncompressed")
-            compressed=0
-            data_to_write=data_of_chunk
+            # progress chunk
+            compressed=2
+            data_to_write=b''
          
          data_length=len(data_to_write)
          self.debug(type="INFO:send_patch_frame",msg=f"   - frame length {data_length}")
