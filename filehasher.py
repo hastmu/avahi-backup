@@ -619,7 +619,7 @@ class FileHasher():
             raise Exception("threading mode unknown")
             
       if self.remote_delta_mode is True:
-         self.send_patch_frame(handle=sys.stdout.fileno(),chunk=0,data_of_chunk=b'',hash_of_chunk=b'',lock=self.lock_delta_stream,eof=True)
+         self.send_patch_frame(handle=sys.stdout.fileno(),chunk=0,data_of_chunk=b'',hash_of_chunk=hashlib.sha256(b'').hexdigest(),lock=self.lock_delta_stream,eof=True)
 
       if self.remote_delta_mode is False:
          print(f"\33[2K\r",end='\r')
@@ -642,7 +642,7 @@ class FileHasher():
                data_to_write=data_of_chunk
          elif eof is False:
             # progress chunk
-            compressed=3
+            compressed=2
             data_to_write=b''
          else:
             # end chunk
