@@ -908,6 +908,10 @@ class FileHasher():
 
       patch_file_stats=pickle.loads(patch_file_stats_data)
 
+      counter={}
+      counter['matching']=0
+      counter['updated']=0
+
       with open(self.inputfile, 'r+b') as target_file:
          # 3) read patch frames and apply
 
@@ -918,6 +922,7 @@ class FileHasher():
                frame_compressed = int.from_bytes(self.read_patch_stream(patch_data_file,1),'big')
                frame_data_length = int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
                if frame_data_length > 0:
+                  counter['matching']+=1
                   print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
                   print(f"  - digest patch[{frame_hash_hexdigest}]")
                   frame_data_raw = self.read_patch_stream(patch_data_file,frame_data_length)
@@ -944,11 +949,12 @@ class FileHasher():
                      print(f"  - digest local[{frame_hash_hexdigest}] match")
                else:
                   if frame_compressed == 2:
+                     counter['matching']+=1
                      # progress chunk
-                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - progress chunk")
+                     #print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - progress chunk")
                   else:
                      # end
-                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - end chunk")
+                     #print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - end chunk")
                      break
 
             except:
@@ -961,7 +967,7 @@ class FileHasher():
       self.apply_stats(stats=patch_file_stats)
 
       self._refresh_inputfile_stats()
-      print(f"- Done.")
+      print(f"- Done. Updated[{counter['updated']}]/Matching[{counter['matching']}]")
 
    def patch_old(self, *, delta_file=False):
 
@@ -1112,7 +1118,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.5"
+version="1.1.6"
 
 if args.version is True:
    print(f"{version}")
@@ -1156,14 +1162,8 @@ elif args.remote_patching is True:
          FH.debug(type="INFO:ssh.exec_command",msg="filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
 
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta",get_pty=False)
-#         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against a --remote-delta", get_pty=True)
-#         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("uname -a", get_pty=True)
          # send local hash file to remote
          ssh_stdin.write(handle.read())
-
-         print(ssh_stdout)
-         a=int.from_bytes(ssh_stdout.read(8),'big')
-         print(a)
 
          #print(ssh_stdout.read(8))
          # patch with remote stream - sys.stdin.buffer
@@ -1188,13 +1188,6 @@ elif args.inputfile is False:
 else:
    #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
-   a=1
-#   print(a.to_bytes(8,'big'))
-   os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
-   #a=2
-   #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
-#   print(a.to_bytes(8,'big'))
-   #FH.send2stdout(a.to_bytes(8,'big'))
 
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
