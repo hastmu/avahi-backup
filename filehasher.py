@@ -1132,12 +1132,13 @@ elif args.remote_patching is True:
       with open(FH.hashfile,"rb") as handle:
          FH.debug(type="INFO:ssh.exec_command",msg="filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
 
-         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta", get_pty=True)
+         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
 #         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against a --remote-delta", get_pty=True)
 #         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("uname -a", get_pty=True)
          # send local hash file to remote
          ssh_stdin.write(handle.read())
 
+         print(ssh_stdout.read(2000))
          # patch with remote stream - sys.stdin.buffer
          while ssh_stdout.channel.recv_ready() is not True:
             time.sleep(0.1)
@@ -1158,7 +1159,7 @@ elif args.inputfile is False:
    exit(0)
 
 else:
-   # print (args)
+   print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
