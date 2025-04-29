@@ -1139,6 +1139,8 @@ elif args.remote_patching is True:
          ssh_stdin.write(handle.read())
 
          print(ssh_stdout.read())
+
+         print(ssh_stdout.read())
          # patch with remote stream - sys.stdin.buffer
 #         while ssh_stdout.channel.recv_ready() is not True:
 #            time.sleep(0.1)
@@ -1161,6 +1163,8 @@ elif args.inputfile is False:
 else:
    print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
+   a=0
+   print(a.to_bytes(8,'big'))
    FH.send2stdout("hello")
 
    if args.report_used_hashfile is True:
