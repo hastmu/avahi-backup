@@ -339,8 +339,8 @@ class FileHasher():
             pass
 
    def send2stdout(self,data):
-      #os.write(sys.stdout.fileno(), data)
-      sys.stdout.buffer.write(data)
+      os.write(sys.stdout.fileno(), data)
+      #sys.stdout.buffer.write(data)
       
 
    def hash_thread(self, *, cpu=-1,Read_file=False, local_delta_file=False,remote_delta=False):
@@ -1138,10 +1138,10 @@ elif args.remote_patching is True:
          # send local hash file to remote
          ssh_stdin.write(handle.read())
 
-         #a=int.from_bytes(ssh_stdout.read(8),'big')
-         #print(a)
+         a=int.from_bytes(ssh_stdout.read(8),'big')
+         print(a)
 
-         print(ssh_stdout.read(8))
+         #print(ssh_stdout.read(8))
          # patch with remote stream - sys.stdin.buffer
 #         while ssh_stdout.channel.recv_ready() is not True:
 #            time.sleep(0.1)
@@ -1164,13 +1164,13 @@ elif args.inputfile is False:
 else:
    #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
-   a=1
+   #a=1
 #   print(a.to_bytes(8,'big'))
-   os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
-   a=2
-   os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
+   #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
+   #a=2
+   #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
 #   print(a.to_bytes(8,'big'))
-   FH.send2stdout("hello")
+   FH.send2stdout(a.to_bytes(8,'big'))
 
    if args.report_used_hashfile is True:
       print(f"{FH.hashfile}")
