@@ -851,7 +851,11 @@ class FileHasher():
       else:
          # ssh stdout
          self.debug(type="INFO:read_patch_stream",msg=f"stream mode {size}")
-         data=handle.channel.recv(size)
+         data=handle.read(size)
+         #while not handle.channel.exit_status_ready():
+         #   if handle.channel.recv_ready():
+         #      data=handle.channel.recv(size)
+         #      break
       self.debug(type="INFO:read_patch_stream",msg=f"data: {data}")
       return data
 
@@ -1138,6 +1142,7 @@ elif args.remote_patching is True:
          # send local hash file to remote
          ssh_stdin.write(handle.read())
 
+         print(ssh_stdout)
          a=int.from_bytes(ssh_stdout.read(8),'big')
          print(a)
 
@@ -1164,9 +1169,9 @@ elif args.inputfile is False:
 else:
    #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
-   #a=1
+   a=1
 #   print(a.to_bytes(8,'big'))
-   #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
+   os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
    #a=2
    #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
 #   print(a.to_bytes(8,'big'))
