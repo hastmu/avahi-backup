@@ -892,8 +892,6 @@ class FileHasher():
       if patch_file_format_version != self.patch_file_version_int or self.chunk_size != patch_file_chunk_size:
          raise Exception("version/chunk size mismatch.")
 
-      raise Exception("version/chunk size mismatch.")
-
       patch_file_stats=pickle.loads(patch_file_stats_data)
 
       with open(self.inputfile, 'r+b') as target_file:
