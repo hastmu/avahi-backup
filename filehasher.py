@@ -618,11 +618,14 @@ class FileHasher():
          else:
             raise Exception("threading mode unknown")
             
+      if self.remote_delta_mode is True:
+         self.send_patch_frame(handle=sys.stdout.fileno(),chunk=0,data_of_chunk=b'',hash_of_chunk=b'',lock=self.lock_delta_stream,eof=True)
+
       if self.remote_delta_mode is False:
          print(f"\33[2K\r",end='\r')
          print(len(self.mismatched_idx_hashes.keys()))
 
-   def send_patch_frame(self, *, handle=False,chunk=-1,hash_of_chunk=False,data_of_chunk=False,lock=False):
+   def send_patch_frame(self, *, handle=False,chunk=-1,hash_of_chunk=False,data_of_chunk=False,lock=False,eof=False):
 
       if handle is not False and hash_of_chunk is not False and data_of_chunk is not False and chunk != -1 and lock is not False:
          self.debug(type="INFO:send_patch_frame",msg=f"...send patch frame for chunk[{chunk}] data[{len(data_of_chunk)}]")
@@ -637,9 +640,13 @@ class FileHasher():
                self.debug(type="INFO:send_patch_frame",msg=f"   - uncompressed")
                compressed=0
                data_to_write=data_of_chunk
-         else:
+         elif eof is False:
             # progress chunk
             compressed=2
+            data_to_write=b''
+         else:
+            # end chunk
+            compressed=3
             data_to_write=b''
          
          data_length=len(data_to_write)
@@ -936,7 +943,13 @@ class FileHasher():
                   else:
                      print(f"  - digest local[{frame_hash_hexdigest}] match")
                else:
-                  break
+                  if frame_compressed == 2:
+                     # progress chunk
+                     print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
+                  else:
+                     # end
+                     break
+
             except:
                break
 
