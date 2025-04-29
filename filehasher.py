@@ -1164,7 +1164,7 @@ elif args.inputfile is False:
 else:
    #print (args)
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
-   #a=1
+   a=1
 #   print(a.to_bytes(8,'big'))
    #os.write(sys.stdout.fileno(), a.to_bytes(8,'big'))
    #a=2
