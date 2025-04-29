@@ -1085,7 +1085,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.1"
+version="1.1.2"
 
 if args.version is True:
    print(f"{version}")
@@ -1158,7 +1158,8 @@ else:
    signal.signal(signal.SIGINT, sigterm_handler)
    signal.signal(signal.SIGHUP, sigterm_handler)
 
-   print(b'\x01\x00\x00\x00\x00\x00\x00\x00')
+   sys.stdout.buffer.write(b"1000")
+#   print(b'\x01\x00\x00\x00\x00\x00\x00\x00')
 
    if args.apply_delta_file is False:
 
