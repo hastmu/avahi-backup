@@ -938,7 +938,6 @@ class FileHasher():
                frame_compressed = int.from_bytes(self.read_patch_stream(patch_data_file,1),'big')
                frame_data_length = int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
                if frame_data_length > 0:
-                  counter['matching']+=1
                   print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
                   print(f"  - digest patch[{frame_hash_hexdigest}]")
                   frame_data_raw = self.read_patch_stream(patch_data_file,frame_data_length)
@@ -961,7 +960,10 @@ class FileHasher():
                      target_file.seek(frame_chunk*self.chunk_size)
                      target_file.write(frame_write_data)
                      self.update_hash_idx(chunk=frame_chunk,new_hash=frame_hash_hexdigest)
+                     counter['updated']+=1
+                     self.save_hashes=True
                   else:
+                     counter['matching']+=1
                      print(f"  - digest local[{frame_hash_hexdigest}] match")
                else:
                   if frame_compressed == 2:
@@ -1134,7 +1136,7 @@ class FileHasher():
       self.debug(type="INFO:save_hash",msg=f"- end")
 
 
-version="1.1.6"
+version="1.1.7"
 
 if args.version is True:
    print(f"{version}")
