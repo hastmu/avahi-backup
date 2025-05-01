@@ -926,6 +926,7 @@ class FileHasher():
 
       counter={}
       counter['matching']=0
+      counter['unneeded']=0
       counter['updated']=0
 
       with open(self.inputfile, 'r+b') as target_file:
@@ -963,7 +964,7 @@ class FileHasher():
                      counter['updated']+=1
                      self.save_hashes=True
                   else:
-                     counter['matching']+=1
+                     counter['unneeded']+=1
                      print(f"  - digest local[{frame_hash_hexdigest}] match")
                else:
                   if frame_compressed == 2:
@@ -985,7 +986,7 @@ class FileHasher():
       self.apply_stats(stats=patch_file_stats)
 
       self._refresh_inputfile_stats()
-      print(f"- Done. Updated[{counter['updated']}]/Matching[{counter['matching']}]")
+      print(f"- Done. Updated[{counter['updated']}]/Matching[{counter['matching']}]/Unneeded[{counter['unneeded']}]")
 
    def patch_old(self, *, delta_file=False):
 
