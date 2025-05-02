@@ -906,9 +906,12 @@ class FileHasher():
          # 1) open delta_file_stream
          self.debug(type="INFO:patch",msg="using delta_file_stream")
          patch_data_file=delta_stream_handle
-         self.remote_delta_mode=True
+         #self.remote_delta_mode=True
+         self.remote_delta_mode=False
       else:
          raise Exception("not idea how you got here, but thats not good.")
+
+      # TODO: think about if this patch, needs a remote_delta_mode = True ?
 
       # 2) read header 
       patch_file_number_of_chunks=int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
@@ -940,7 +943,7 @@ class FileHasher():
                frame_data_length = int.from_bytes(self.read_patch_stream(patch_data_file,8),'big')
                if frame_data_length > 0:
                   print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}]")
-                  print(f"  - digest patch[{frame_hash_hexdigest}]")
+                  self.debug(type="INFO:patch",msg=f"  - digest patch[{frame_hash_hexdigest}]")
                   frame_data_raw = self.read_patch_stream(patch_data_file,frame_data_length)
 
                   old_hash=self.hash_obj.get(frame_chunk,False)
@@ -954,7 +957,7 @@ class FileHasher():
                         raise Exception(f"Delta Frame with unknown compression type {frame_compressed}")
                      # hash
                      frame_write_data_hash=hashlib.sha256(frame_write_data).hexdigest()
-                     print(f"  - digest write[{frame_write_data_hash}]")
+                     self.debug(type="INFO:patch",msg=f"  - digest write[{frame_write_data_hash}]")
                      if frame_hash_hexdigest != frame_write_data_hash:
                         raise Exception("Delta Frame hash does not match shipped data.")
                      # check if we need to write
@@ -971,8 +974,10 @@ class FileHasher():
                      counter['matching']+=1
                      # progress chunk
                      #print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - progress chunk")
+                     self.debug(type="INFO:patch",msg=f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - progress chunk")
                   else:
                      # end
+                     self.debug(type="INFO:patch",msg=f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - end chunk")
                      #print(f"- chunk {frame_chunk} - C[{frame_compressed}] - L[{frame_data_length}] - end chunk")
                      break
 
