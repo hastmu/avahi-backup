@@ -1158,7 +1158,7 @@ elif args.show_hashes is not False:
       raise Exception("can not load hash file")
 
 elif args.remote_patching is True:
-   print(f"- Remote patching...")
+   print("- Remote patching...")
    # local file setup
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    atexit.register(save_hash_file)
@@ -1167,12 +1167,16 @@ elif args.remote_patching is True:
    import paramiko
    ssh = paramiko.SSHClient()
    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-   if args.remote_password is False:
-      private_key = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
-      ssh.connect(args.remote_hostname, username=args.remote_username, pkey=private_key, look_for_keys=False,compress=False)
-   else:
-      ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password,compress=False)
-   
+   try:
+      if args.remote_password is False:
+         private_key = paramiko.RSAKey.from_private_key_file(args.remote_ssh_key)
+         ssh.connect(args.remote_hostname, username=args.remote_username, pkey=private_key, look_for_keys=False,compress=False)
+      else:
+         ssh.connect(args.remote_hostname, username=args.remote_username, password=args.remote_password,compress=False)
+   except Exception as e:
+      print(f"SSH-Connect failed: {e}")
+      exit(1)
+
    # skip version check if already done. set FILEHASHER_SKIP_VERSION
    if os.environ.get("FILEHASHER_SKIP_VERSION",False) is False:
       ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --version")
