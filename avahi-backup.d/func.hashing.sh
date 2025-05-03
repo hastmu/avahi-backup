@@ -8,9 +8,11 @@
 declare -A HASH_DATA
 declare -A HASHER_CFG
 declare -A HASHER_QUEUE
+declare -A REMOTE_QUEUE
 declare -A HASHER_DELTA_LAST_OK
 
 HASHER_QUEUE_FILE=""
+REMOTE_QUEUE_FILE=""
 
 #HASHER_CFG["FILEHASHER"]="/export/disk-1/home/loc_adm/Syncthing/src/avahi-backup/filehasher.py"
 HASHER_CFG["FILEHASHER"]="filehasher.py"
@@ -36,24 +38,141 @@ function remote.hasher.version() {
    fi
 }
 
-function hash.save.queue() {
-
-   if [ ! -z "${HASHER_QUEUE_FILE}" ]
+function hash.remote.add2queue() {
+   # $1 ... name
+   # $2+ .. all attributes
+   if [ ! -z "${REMOTE_QUEUE_FILE}" ]
    then
-      #output "- save hasher queue[${HASHER_QUEUE_FILE}]"
-      #declare -p HASHER_QUEUE
-      declare -p HASHER_QUEUE > "${HASHER_QUEUE_FILE}"
-   else
-      output "! call hash.save.queue without definition of queue file."
+      touch "${REMOTE_QUEUE_FILE}"
+      source "${REMOTE_QUEUE_FILE}"
+      local item="${1}"
+      shift 
+      REMOTE_QUEUE["${item}"]="{ 'args': '${@}' }"
+      output "- save remote queue[${REMOTE_QUEUE_FILE}] with #${#REMOTE_QUEUE[@]} entries"
+      declare -p REMOTE_QUEUE > "${REMOTE_QUEUE_FILE}"
    fi
 }
+
+function hash.remote.remove_from_queue() {
+   # $1 ... name
+   if [ ! -z "${REMOTE_QUEUE_FILE}" ]
+   then
+      touch "${REMOTE_QUEUE_FILE}"
+      source "${REMOTE_QUEUE_FILE}"
+      unset REMOTE_QUEUE["${1}"]
+      output "- save remote queue[${REMOTE_QUEUE_FILE}] with #${#REMOTE_QUEUE[@]} entries"
+      declare -p REMOTE_QUEUE > "${REMOTE_QUEUE_FILE}"
+   fi
+}
+
+function hash.remote.revisit.queue() {
+
+   # $1 ... define queue file
+   REMOTE_QUEUE_FILE="${1}"
+
+   if [ -e "${REMOTE_QUEUE_FILE}" ]
+   then
+      # shellcheck disable=SC1091
+      if source "${REMOTE_QUEUE_FILE}"
+      then
+         output "- sourcing hasher queue[${REMOTE_QUEUE_FILE}]..."
+         declare -p REMOTE_QUEUE
+      else
+         rm -f "${REMOTE_QUEUE_FILE}"
+      fi
+   else
+      output "- no hasher queue[${REMOTE_QUEUE_FILE}]..."
+   fi
+
+   # execute
+   local -i item_max="${#REMOTE_QUEUE[@]}"
+   if [ ${item_max} -gt 0 ]
+   then
+      local item=""
+      local -i count=0
+      local -i item_count=0
+      local -i time_left=600
+      local chunk_size=""
+      local hash_file=""
+      local -i s_time=0
+      s_time=$(date +%s)
+
+      for item in "${!REMOTE_QUEUE[@]}"
+      do
+         local -i scan_time=$(( time_left / (item_max-item_count) ))
+         if [ ${scan_time} -lt 10 ]
+         then
+            scan_time=10
+         fi
+         # remove from local list
+         output "- remote patching[${count}] item[${item_count}/${item_max}] time left[${time_left} sec] scan time per item[${scan_time}]"
+         output "  - ${item}"
+
+         # remove missing items
+         if [ ! -e "${item}" ]
+         then
+            hash.remote.remove_from_queue "${item}"
+         else
+            timeout ${scan_time} filehasher.py $(echo "${REMOTE_QUEUE[${item}]//\'/\"}" | jq -r '."args"') 
+            stat=${PIPESTATUS[0]}
+            output "stat: ${stat}"
+            if [ ${stat} -eq 124 ]
+            then
+               output "- timeout...keep"
+            elif [ ${stat} -eq 0 ]
+            then
+               output "  - complete. drop from list."
+               hash.remote.remove_from_queue "${item}"
+            fi
+         fi
+         item_count=$(( item_count + 1 ))
+
+         e_time=$(date +%s)
+         time_left=$(( 600 - ( e_time - s_time ) ))
+         if [ ${time_left} -lt 0 ]
+         then
+            break
+         fi
+
+         if check.blacklisted.process
+         then
+            break
+         fi
+
+      done
+   fi
+
+}
+
 
 function hash.add2queue() {
    # $1 ... name
    # $2 ... chunk size
    # $3 ... hashfile
+   touch "${HASHER_QUEUE_FILE}"
+   source "${HASHER_QUEUE_FILE}"
    HASHER_QUEUE["${1}"]="{ 'chunk-size': ${2}, 'hashfile': '${3}' }"
-   hash.save.queue
+   output "- save hasher queue[${HASHER_QUEUE_FILE}] with #${#HASHER_QUEUE[@]} entries"
+   declare -p HASHER_QUEUE > "${HASHER_QUEUE_FILE}"
+}
+
+function hash.remove_from_queue() {
+   # $1 ... name
+   touch "${HASHER_QUEUE_FILE}"
+   source "${HASHER_QUEUE_FILE}"
+   unset HASHER_QUEUE["${1}"]
+   output "- save hasher queue[${HASHER_QUEUE_FILE}] with #${#HASHER_QUEUE[@]} entries"
+   declare -p HASHER_QUEUE > "${HASHER_QUEUE_FILE}"
+}
+
+function hash.gen_hash_filename() {
+   # $1 ... input filename
+   echo "${1//\//_}"
+}
+
+function hash.gen_full_hash_filename() {
+   # $1 ... input filename
+   echo "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/$(hash.gen_hash_filename "${1}")"
 }
 
 function hash.local_file() {
@@ -68,12 +187,17 @@ function hash.local_file() {
    if [ -z "${4}" ]
    then
       # use default location
-      hashfile="${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${3//\//_}"
+      hashfile="$(hash.gen_full_hash_filename "${3}")"
    else
       # with hashfile location
       hashfile="${4}"
    fi
    HASH_DATA["${3}"]="${hashfile}"
+
+   echo timeout --preserve-status "$1" "${HASHER_CFG["FILEHASHER"]}" "--min-chunk-size=$2" \
+                  --inputfile "${3}" --thread-mode 1 \
+                  --hashfile "${hashfile}"
+
 
    timeout --preserve-status "$1" "${HASHER_CFG["FILEHASHER"]}" "--min-chunk-size=$2" \
                   --inputfile "${3}" --thread-mode 1 \
@@ -83,14 +207,12 @@ function hash.local_file() {
    if [ ${stat} -eq 0 ]
    then
       output "  - are up-to-date"
-      unset HASHER_QUEUE["${3}"]
-      hash.save.queue
+      hash.remove_from_queue "${3}"
       return 0
    elif [ ${stat} -eq 1 ]
    then
       output "  - got updated."
-      unset HASHER_QUEUE["${3}"]
-      hash.save.queue
+      hash.remove_from_queue "${3}"
       return 0
    else
       hash.add2queue "${3}" "${2}" "${hashfile}"
@@ -131,16 +253,17 @@ function hash.revisit.queue() {
       local hash_file=""
       local -i s_time=0
       s_time=$(date +%s)
-      local -i scan_time=$(( time_left / item_max ))
-      if [ ${scan_time} -lt 10 ]
-      then
-         scan_time=10
-      fi
 
       for item in "${!HASHER_QUEUE[@]}"
       do
+         local -i scan_time=$(( time_left / (item_max-item_count) ))
+         if [ ${scan_time} -lt 10 ]
+         then
+            scan_time=10
+         fi
          # remove from local list
-         output "- local hashing scanned[${count}] item[${item_count}/${item_max}] time left[${time_left} sec] scan time[${scan_time}]"
+         output "- local hashing scanned[${count}] item[${item_count}/${item_max}] time left[${time_left} sec] scan time per item[${scan_time}]"
+         output "  - ${item}"
 
          chunk_size="$(echo "${HASHER_QUEUE[${item}]//\'/\"}" | jq -r '."chunk-size"')"
          hash_file="$(echo "${HASHER_QUEUE[${item}]//\'/\"}" | jq -r '."hashfile"')"
@@ -148,9 +271,9 @@ function hash.revisit.queue() {
          # remove missing items
          if [ ! -e "${item}" ]
          then
-            unset HASHER_QUEUE[${item}]
+            hash.remove_from_queue "${item}"
          else
-            hash.local_file "${scan_time}s" "${chunk_size}" "${item}" "${hash_file}"
+            hash.local_file "${scan_time}s" "${chunk_size}" "${item}" "${hash_file}" 
          fi
          item_count=$(( item_count + 1 ))
 
@@ -160,9 +283,13 @@ function hash.revisit.queue() {
          then
             break
          fi
+
+         if check.blacklisted.process
+         then
+            break
+         fi
+
       done
-         
-      hash.save.queue
    fi
 
 }
@@ -217,7 +344,7 @@ function hash.lastok.delta() {
 
    local -i age=0
    local -i ret=0
-   local hash_file_name="${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}"
+   local hash_file_name="$(hash.gen_full_hash_filename "${1}")"
    if [ -n "${HASHER_DELTA_LAST_OK["${hash_file_name}"]}" ]
    then
       age=$(( $(date +%s) - "${HASHER_DELTA_LAST_OK["${hash_file_name}"]}" ))
@@ -257,9 +384,9 @@ function hash.transfer_remote_file() {
       touch "${1}"
    fi
    # hash
-   if hash.local_file "10s" "${2}" "${1}" || [ ! -e "${1}" ]
+   if hash.local_file "10s" "${2}" "${1}"
    then
-#      echo "- local hashing complete..."
+      #echo "- local hashing complete..."
       if ! hash.lastok.delta "${1}" "$(( 24 * 60 * 60 ))"
       then
          # 1.2. check remote version
@@ -272,7 +399,7 @@ function hash.transfer_remote_file() {
             echo timeout --preserve-status 60s "${HASHER_CFG["FILEHASHER"]}" \
                "--min-chunk-size=${2}" \
                --inputfile "${1}" \
-               --hashfile "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}" \
+               --hashfile "$(hash.gen_full_hash_filename "${1}")" \
                --remote-patching \
                --remote-host "${4}" \
                --remote-username "$(id -un)" \
@@ -282,32 +409,40 @@ function hash.transfer_remote_file() {
             timeout --preserve-status 60s "${HASHER_CFG["FILEHASHER"]}" \
                "--min-chunk-size=${2}" \
                --inputfile "${1}" \
-               --hashfile "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}" \
+               --hashfile "$(hash.gen_full_hash_filename "${1}")" \
                --remote-patching \
                --remote-host "${4}" \
                --remote-username "$(id -un)" \
                --remote-ssh-key ".ssh/backup" \
-               --remote-src-file "${3}" | tee "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}.log" 2>&1
-            declare -p PIPESTATUS
-            stat=$?
-            echo "stat: $?"
-            local -i unchanged=0
-            unchanged=$(grep -ci unchanged "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}.log")
+               --remote-src-file "${3}" | tee "$(hash.gen_full_hash_filename "${1}").log" 2>&1
+            P=$(declare -p PIPESTATUS)
+            echo ${P}
+            eval declare -a status=$(echo ${P} | cut -d= -f2-)
+            stat=${status[0]}
+            echo "stat: ${stat}"
+            #local -i unchanged=0
+            #unchanged=$(grep -ci unchanged "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}.log")
             if [ ${stat} -eq 0 ]
             then
                # mark as successful - skip next 24h
-               if [ ${unchanged} -ne 0 ]
-               then 
-                  output "- mark as unchanged."
-                  HASHER_DELTA_LAST_OK["${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/${1//\//_}"]=$(date +%s)
-                  output "- write ${#HASHER_DELTA_LAST_OK[@]} caches"
-                  declare -p HASHER_DELTA_LAST_OK > "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/.cache"
-                  return 0
-               else
-                  # there was patching
-                  return 1
-               fi
+               output "- mark as done."
+               touch "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/.cache"
+               source "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/.cache"
+               HASHER_DELTA_LAST_OK["$(hash.gen_full_hash_filename "${1}")"]=$(date +%s)
+               output "- write ${#HASHER_DELTA_LAST_OK[@]} caches"
+               declare -p HASHER_DELTA_LAST_OK > "${RUNTIME["BACKUP_ROOT"]}/backup.avahi/hashes/.cache"
+               hash.remote.remove_from_queue "$1"
+               return 0
             else
+               # add to queue
+               hash.remote.add2queue "$1" "--min-chunk-size=${2}" \
+               --inputfile "${1}" \
+               --hashfile "$(hash.gen_full_hash_filename "${1}")" \
+               --remote-patching \
+               --remote-host "${4}" \
+               --remote-username "$(id -un)" \
+               --remote-ssh-key ".ssh/backup" \
+               --remote-src-file "${3}"
                return 1
             fi
          # 4. apply patch

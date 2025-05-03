@@ -157,14 +157,14 @@ function type.path.perform.backup() {
    mapfile -t FLIST < "${large_file_tmp}"
 
    # local large files
-   output "  - get local large file list..."
-   find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." -size +$(( 1 * 1024 * 1024 * 1024 - 1 ))c -printf "%P\n" \
-   > "${large_file_tmp}"
-   local_item_max=$(wc -l < "${large_file_tmp}")
-   local -a LLIST
-   mapfile -t LLIST < "${large_file_tmp}"
+#   output "  - get local large file list..."
+#   find "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/." -size +$(( 1 * 1024 * 1024 * 1024 - 1 ))c -printf "%P\n" \
+#   > "${large_file_tmp}"
+#   local_item_max=$(wc -l < "${large_file_tmp}")
+#   local -a LLIST
+#   mapfile -t LLIST < "${large_file_tmp}"
    # report
-   output "- found large files local[#${local_item_max}] remote[#${item_max}]"
+#   output "- found large files local[#${local_item_max}] remote[#${item_max}]"
    rm -f "${large_file_tmp}"
 
    output "  - delta syncing..."
@@ -186,12 +186,12 @@ function type.path.perform.backup() {
       local -i item_stat=0
       for item in "${FLIST[@]}"
       do
-         count=$(( count + 1 ))
          if hash.lastok.delta "${RUNTIME_ITEM["zfs.subvol.target.dir"]}/${item}" $(( 24 * 60 * 60 )) >> "${RUNTIME_ITEM["logfile"]}"
          then
             skip_last_ok=$(( skip_last_ok + 1 ))
             continue
          fi
+         count=$(( count + 1 ))
          output "    - skipped last_ok[${skip_last_ok}] item[${count}/${item_max}], processing #${count}..."
          output "     ${item}" >> "${RUNTIME_ITEM["logfile"]}"
          hash.transfer_remote_file \
@@ -199,14 +199,31 @@ function type.path.perform.backup() {
             "$(( 8 * 1024 * 1024 ))" \
             "${RUNTIME_ITEM["path"]}/${item}" \
             "${RUNTIME["BACKUP_HOSTNAME"]}" \
-            >> "${RUNTIME_ITEM["logfile"]}" 2>&1
-         item_stat=$?
+            2>&1 | tee -a "${RUNTIME_ITEM["logfile"]}"
+#         declare -p PIPESTATUS
+         item_stat=${PIPESTATUS[0]}
          stat=$(( stat + item_stat ))
          if [ ${item_stat} -ne 0 ]
          then
-            output "- there was an issue with ${item}..."
+            output "- there was an issue with ${item}...${item_stat}"
             SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} large file syncing had an issue with ${item}"
          fi
+
+         if check.blacklisted.process
+         then
+            SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} large file syncing had been interrupted due to blacklist process"
+            # mark as broken
+            stat=$(( stat + 1))
+            break
+         fi
+
+         if [ ${count} -gt 10 ]
+         then
+            SUMMARY[${#SUMMARY[@]}]="B.BACKUP-WARNING:${src} large file syncing had been interrupted due to 10 items processed."
+            stat=$(( stat + 1))
+            break
+         fi
+
       done
       output "    - skipped last_ok[${skip_last_ok}] item[${count}/${item_max}]"
 

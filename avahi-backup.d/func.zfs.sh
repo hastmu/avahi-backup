@@ -20,14 +20,26 @@ function zfs.snapshot() {
       else
          snapshot="$2"
       fi
+      local -i stime=$(date +%s)
       if [ -z "$1" ]
       then
-         subvol="$(zfs list -Ho name "$(pwd)")"
+         # sometimes zfs gets stuck at this, so lets handle it.
+         subvol="$(timeout 60s zfs list -t filesystem -Ho name "$(pwd)")"
       else
          subvol="$1"
       fi
-      output "- global zfs snapshot: ${snapshot} @ ${subvol}"
-      zfs snapshot -r ${subvol}@${snapshot}
+      local -i etime=$(date +%s)
+      # debugging the zfs hang story
+      SUMMARY[${#SUMMARY[@]}]="A.ZFS: zfs list took $(( etime - stime ))"
+
+      if [ -z "${subvol}" ]
+      then
+         output "- zfs list got stuck. FATAL."
+         exit 1
+      else
+         output "- global zfs snapshot: ${snapshot} @ ${subvol}"
+         zfs snapshot -r ${subvol}@${snapshot}
+      fi
    else
       output "- NO ZFS - NO SNAPSHOT."
       SUMMARY[${#SUMMARY[@]}]="A.ZFS: no ZFS - no snapshot - $1@$2"
