@@ -370,6 +370,8 @@ class FileHasher():
                   del self.chunk_buffer[cpu][chunk]
                   data=hashlib.sha256(piece)
                   self.update_hash_idx(chunk=chunk,new_hash=data.hexdigest(),data=piece,local_delta_file=local_delta_file,remote_delta=remote_delta)
+               else:
+                  raise Exception("hash_thread: i should handle data, but i have none? confusing.")
 
             time.sleep(0.001)
 
@@ -393,6 +395,7 @@ class FileHasher():
          self.remote_delta_mode=False
       else:
          self.remote_delta_mode=True
+         incremental=False
 
       # TODO: Revisit incremental with the new index missing scheme.
       if incremental is False:
@@ -886,7 +889,7 @@ class FileHasher():
          #   if handle.channel.recv_ready():
          #      data=handle.channel.recv(size)
          #      break
-      self.debug(type="INFO:read_patch_stream",msg=f"data: {data}")
+      #self.debug(type="INFO:read_patch_stream",msg=f"data: {data}")
       return data
 
    def patch(self, *, delta_file=False,delta_stream_handle=False):
@@ -1162,6 +1165,9 @@ elif args.remote_patching is True:
    # local file setup
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    atexit.register(save_hash_file)
+   # hash file
+   FH.hash_file(incremental=True,threading_mode=args.thread_mode)
+   FH.save_hash()
 
    # remote connection
    import paramiko
@@ -1189,6 +1195,7 @@ elif args.remote_patching is True:
       with open(FH.hashfile,"rb") as handle:
          FH.debug(type="INFO:ssh.exec_command",msg="filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta")
 
+#         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta --thread-mode 1",get_pty=False)
          ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command("filehasher.py --inputfile \""+args.remote_src_filename+"\" --min-chunk-size "+str(FH.chunk_size)+" --verify-against - --remote-delta",get_pty=False)
          # send local hash file to remote
          ssh_stdin.write(handle.read())
