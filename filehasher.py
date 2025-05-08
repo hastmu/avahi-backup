@@ -395,7 +395,8 @@ class FileHasher():
          self.remote_delta_mode=False
       else:
          self.remote_delta_mode=True
-         incremental=False
+         # TODO: conclude how to change this into a full compare, but incremental updating
+         #incremental=False
 
       # TODO: Revisit incremental with the new index missing scheme.
       if incremental is False:
@@ -408,7 +409,8 @@ class FileHasher():
             self.verify_reference=loaded["hashes"]
          else:
             raise Exception("unable to load verification hashes")
-         incremental=False
+         # TODO: conclude how to change this into a full compare, but incremental updating
+         #incremental=False
       else:
          self.verify_reference=False
 
