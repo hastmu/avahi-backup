@@ -1045,7 +1045,7 @@ class FileHasher():
    def load_hash(self,*, hashfile=False, extended_tests=False,type_patch_file=False):
 
       self.loaded_hash_error="-"
-      if hashfile != False:
+      if hashfile is not False:
          data=False
          if hashfile == "-":
             # stdin is used
@@ -1056,13 +1056,13 @@ class FileHasher():
             with open(hashfile, 'rb') as handle:
                try:
                   data = pickle.load(handle)
-               except:
+               except Exception as e:
                   self.debug(type="INFO:load_hash",msg="unpickling of data failed.")
-                  self.loaded_hash_error="not-loaded(unpickling)"
+                  self.loaded_hash_error=f"not-loaded(unpickling-{e})"
                   return False
 
                   
-         if data != False:
+         if data is not False:
             
             try:
                # check version
@@ -1083,7 +1083,7 @@ class FileHasher():
                   return False
                
                # extended checks
-               if extended_tests == True:
+               if extended_tests is True:
                   # check if size matches
                   if data["size"] != self.inputfile_stats.st_size:
                      self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.size)+"] file["+str(data["size"])+"]")
@@ -1102,6 +1102,7 @@ class FileHasher():
             except Exception as e:
                self.debug(type="INFO:load_hash",msg="exception triggered.")
                self.loaded_hash_error=f"not-loaded(unknown - {e})"
+               print(data)
                return False            
             
             # all good
