@@ -1086,7 +1086,7 @@ class FileHasher():
                if extended_tests is True:
                   # check if size matches
                   if data["size"] != self.inputfile_stats.st_size:
-                     self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.size)+"] file["+str(data["size"])+"]")
+                     self.debug(type="INFO:load_hash",msg="size mismatch self["+str(self.inputfile_stats.st_size)+"] file["+str(data["size"])+"]")
                      self.loaded_hash_error="not-loaded(wrong-size)"
                      return False
                   # check mtime
@@ -1101,8 +1101,7 @@ class FileHasher():
                      return False
             except Exception as e:
                self.debug(type="INFO:load_hash",msg="exception triggered.")
-               self.loaded_hash_error=f"not-loaded(unknown - {e})"
-               print(data)
+               self.loaded_hash_error=f"not-loaded(unknown - {e}) - {data}"
                return False            
             
             # all good
