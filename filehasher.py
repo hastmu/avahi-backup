@@ -1067,7 +1067,7 @@ class FileHasher():
             try:
                # check version
 
-               if type_patch_file == False:
+               if type_patch_file is False:
                   target_version=self.chunk_file_version
                else:
                   target_version=self.patch_file_version
@@ -1099,9 +1099,9 @@ class FileHasher():
                      self.debug(type="INFO:load_hash",msg="inputfile mismatch self["+self.inputfile+"] file["+data["inputfile"]+"]")
                      self.loaded_hash_error="not-loaded(wrong-inputfile)"
                      return False
-            except:
+            except Exception as e:
                self.debug(type="INFO:load_hash",msg="exception triggered.")
-               self.loaded_hash_error="not-loaded(unknown)"
+               self.loaded_hash_error=f"not-loaded(unknown - {e})"
                return False            
             
             # all good
@@ -1167,6 +1167,10 @@ elif args.remote_patching is True:
    # local file setup
    FH=FileHasher(inputfile=args.inputfile, chunk_size=args.min_chunk_size, hashfile=args.hashfile,debug=args.debug)
    atexit.register(save_hash_file)
+   signal.signal(signal.SIGTERM, sigterm_handler)
+   signal.signal(signal.SIGINT, sigterm_handler)
+   signal.signal(signal.SIGHUP, sigterm_handler)
+   signal.signal(signal.SIGPIPE, sigterm_handler)
    # hash file
    FH.hash_file(incremental=True,threading_mode=args.thread_mode)
    FH.save_hash()
